@@ -1,0 +1,30 @@
+schema_version = 1
+name = "character-48"
+fit = "contain"
+anchor = "bottom-center"
+transparent_margin = 1
+
+[target]
+width = 48
+height = 48
+
+[alpha]
+threshold = 96
+coverage_threshold = 0.45
+background = "auto"
+background_tolerance = 24
+
+[palette]
+max_colors = 16
+color_space = "oklab"
+dithering = "none"
+
+[outline]
+width = 1
+color = "#2b1009"
+connectivity = 8
+corner_rule = "pixel-art"
+
+[cleanup]
+min_component_pixels = 1
+fill_single_pixel_holes = false

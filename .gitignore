@@ -1,0 +1,22 @@
+# Rust
+/target
+**/target
+Cargo.lock.orig
+*.pdb
+
+# PRD / internal design docs (kept local, not published)
+Pixel_Pipeline_*.md
+/docs/prd/
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.swp
+
+# Local scratch
+/tmp/
+/.tmp/
+/scratch/
+*.log

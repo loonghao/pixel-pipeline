@@ -1,0 +1,12 @@
+# Normalize line endings: store LF in the repo, let Git handle checkout.
+* text=auto eol=lf
+
+# Explicitly text
+*.rs   text eol=lf
+*.toml text eol=lf
+*.md   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+
+# Binary assets
+*.png binary

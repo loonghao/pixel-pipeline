@@ -1,0 +1,117 @@
+# Pixel Pipeline
+
+[![CI](https://github.com/loonghao/pixel-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/loonghao/pixel-pipeline/actions/workflows/ci.yml)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
+
+**Agent-first, deterministic true-pixel asset compiler for game production.**
+
+Pixel Pipeline turns illustrations and flat art into genuine pixel-art sprites:
+target-grid reconstruction, Oklab palette quantization, a deterministic
+one-pixel outline, and a machine-routable `pass` / `review` / `fail` quality
+gate. Every run is reproducible and emits a structured JSON report designed to
+be consumed by agents, CI, and tooling — not just humans.
+
+## Features
+
+- **Deterministic pipeline** — same input + profile ⇒ byte-identical output.
+- **True pixels** — area-coverage grid reconstruction, not naive downscaling.
+- **Compiled outlines** — outlines are *derived* from the body mask with
+  pixel-art corner rules, never traced from source RGB.
+- **Oklab palettes** — median-cut quantization with a hard color budget.
+- **A real quality gate** — hard rules produce stable reason codes; ambiguous
+  segmentation can never silently `pass` (it is forced to `review`).
+- **Agent-friendly CLI** — JSON on stdout, logs on stderr, status exit codes,
+  atomic writes, and JSONL batch with `--resume` / `--jobs`.
+
+## Install
+
+```bash
+# From source (Rust stable toolchain)
+cargo build --release
+# Binary at target/release/pixelpipe
+```
+
+Prebuilt binaries for Linux, macOS, and Windows are attached to each
+[release](https://github.com/loonghao/pixel-pipeline/releases).
+
+## Usage
+
+```bash
+# 1. Inspect an input and get a suggested mode (JSON on stdout)
+pixelpipe inspect hero.png --pretty
+
+# 2. Convert to a 48x48 true-pixel sprite with the built-in profile
+pixelpipe convert hero.png -o out/hero.png --profile character-48 --pretty
+
+# 3. Validate an existing sprite against a profile's hard rules
+pixelpipe validate out/hero.png --profile character-48 \
+  --body-mask out/hero.body-mask.png
+
+# 4. Batch-convert a JSONL manifest in parallel, resumable
+pixelpipe batch tasks.jsonl --out-dir out --jobs 8 --resume
+```
+
+`convert` writes the final PNG plus sidecar artifacts (`*.body.png`,
+`*.body-mask.png`, `*.outline-mask.png`, `*.preview.png`) and a
+`*.report.json`.
+
+### Batch manifest (JSONL)
+
+One task per line:
+
+```json
+{"id":"hero-48","input":"hero.png","profile":"character-48"}
+{"id":"slime","input":"slime.png","size":"32x32","max_colors":8}
+```
+
+## Profiles
+
+Profiles are versioned TOML files describing the target grid, alpha handling,
+palette budget, outline, and cleanup rules. Built-in profiles ship in the
+binary; point `--profile` at a file path to use your own.
+
+- `character-32` — 32×32, 12 colors
+- `character-48` — 48×48, 16 colors
+- `character-64` — 64×64, 24 colors
+
+See [`profiles/`](profiles/) for the full schema.
+
+## Status model & exit codes
+
+| Status   | Exit | Meaning                                                  |
+| -------- | ---- | -------------------------------------------------------- |
+| `pass`   | `0`  | All hard rules pass; no ambiguous inference was used.    |
+| `review` | `2`  | Hard rules pass, but a segmentation/composition ambiguity exists. |
+| `fail`   | `3`  | One or more game-asset hard rules failed.                |
+
+Reports include stable `reasons[]` with SCREAMING_SNAKE_CASE codes (e.g.
+`OUTLINE_EXTRA_PIXELS`, `PALETTE_LIMIT_EXCEEDED`) so agents can route on
+outcomes without parsing prose.
+
+## Workspace layout
+
+| Crate                    | Responsibility                                       |
+| ------------------------ | ---------------------------------------------------- |
+| `pixel-formats`          | Stable contracts: profiles, reports, status codes.   |
+| `pixel-core`             | Deterministic conversion pipeline.                   |
+| `pixel-qa`               | Static QA and the release gate.                      |
+| `pixel-cache`            | Content-addressed cache key helpers.                 |
+| `pixel-provider`         | Provider interfaces (semantic / animation) — stubs.  |
+| `pixelpipe` (`apps/`)    | The CLI.                                             |
+
+## Development
+
+```bash
+cargo fmt --all
+cargo clippy --all-targets -- -D warnings
+cargo test
+```
+
+## License
+
+Licensed under either of
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+- MIT license ([LICENSE-MIT](LICENSE-MIT))
+
+at your option.
