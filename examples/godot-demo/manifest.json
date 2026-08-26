@@ -1,0 +1,35 @@
+{
+  "frame_pattern": "{prefix}_r{row}c{col}.png",
+  "right_is_flipped_left": true,
+  "sizes": [
+    { "label": "32px", "profile": "character-32", "dir": "res://assets/32/", "cell": 32, "scale": 6 },
+    { "label": "48px", "profile": "character-48", "dir": "res://assets/48/", "cell": 48, "scale": 4 },
+    { "label": "64px", "profile": "character-64", "dir": "res://assets/64/", "cell": 64, "scale": 3 }
+  ],
+  "animations": [
+    {
+      "name": "idle",
+      "prefix": "idle",
+      "fps": 4,
+      "loop": true,
+      "frames": 4,
+      "directions": { "down": 0, "left": 1, "up": 2 }
+    },
+    {
+      "name": "walk",
+      "prefix": "walk",
+      "fps": 8,
+      "loop": true,
+      "frames": 4,
+      "directions": { "down": 0, "left": 1, "up": 2 }
+    },
+    {
+      "name": "run",
+      "prefix": "run",
+      "fps": 12,
+      "loop": true,
+      "frames": 6,
+      "directions": { "down": 0, "left": 1, "up": 2 }
+    }
+  ]
+}

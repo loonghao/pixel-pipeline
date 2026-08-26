@@ -8,16 +8,19 @@
 
 pub mod color;
 pub mod error;
+pub mod feature;
 pub mod manifest;
 pub mod profile;
 pub mod report;
 pub mod status;
 
 pub use error::FormatError;
-pub use manifest::{parse_size, BatchTask};
+pub use feature::{FeatureKind, FeatureMap, FeatureRegion};
+pub use manifest::{parse_grid, parse_size, BatchTask};
 pub use profile::{
-    AlphaConfig, Anchor, BackgroundMode, CleanupConfig, ColorSpace, CornerRule, Dithering, Fit,
-    OutlineConfig, PaletteConfig, Profile, Target, PROFILE_SCHEMA_VERSION,
+    AlphaConfig, Anchor, BackgroundMode, CleanupConfig, ColorSpace, CornerRule, DetailConfigToml,
+    Dithering, FeatureConfigToml, Fit, OutlineConfig, PaletteConfig, Profile, Target,
+    PROFILE_SCHEMA_VERSION,
 };
 pub use report::{Artifacts, Canvas, QaMetrics, Report, REPORT_SCHEMA_VERSION};
 pub use status::{Reason, ReasonCode, Status};

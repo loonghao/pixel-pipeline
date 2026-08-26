@@ -6,17 +6,30 @@
 
 use crate::bitmap::{Bitmap, Mask};
 use crate::oklab::{linear_to_srgb, srgb_to_linear};
-use pixel_formats::{Anchor, Profile};
+use pixel_formats::{Anchor, FeatureMap, Profile};
 
 /// Result of reconstruction: a body bitmap and its binary mask, both sized to
 /// the full target canvas (body content placed inside the reserved region).
 pub struct Reconstructed {
     pub body: Bitmap,
     pub body_mask: Mask,
+    /// Target-canvas mask of body pixels that map onto identity-critical
+    /// feature regions (face/eyes/...). Empty when no FeatureMap was supplied.
+    /// Used to lock their colors during palette quantization (FR-PALETTE-005).
+    pub feature_mask: Mask,
 }
 
 /// Reconstruct the source (clipped to `fg` foreground) onto the target grid.
-pub fn reconstruct(src: &Bitmap, fg: &Mask, profile: &Profile) -> Reconstructed {
+///
+/// `features` (optional) marks identity-critical regions; their source pixels
+/// get `profile.features.saliency_weight`× sampling weight so key features
+/// survive downsampling (PRD §7.5 FR-RECON-004, §14.3).
+pub fn reconstruct(
+    src: &Bitmap,
+    fg: &Mask,
+    profile: &Profile,
+    features: Option<&FeatureMap>,
+) -> Reconstructed {
     let (bw, bh) = profile.body_region();
     let reserved = profile.outline.width + profile.transparent_margin;
 
@@ -31,18 +44,35 @@ pub fn reconstruct(src: &Bitmap, fg: &Mask, profile: &Profile) -> Reconstructed 
     let fit_w = ((src_w as f64 * scale).round() as u32).clamp(1, bw);
     let fit_h = ((src_h as f64 * scale).round() as u32).clamp(1, bh);
 
+    let use_features = features.map(|f| !f.is_empty()).unwrap_or(false);
     let mut cell = Bitmap::new(fit_w, fit_h);
     let mut cell_mask = Mask::new(fit_w, fit_h);
+    let mut cell_feature = Mask::new(fit_w, fit_h);
     for ty in 0..fit_h {
         for tx in 0..fit_w {
             let rx0 = sx0 + (tx as u64 * src_w as u64 / fit_w as u64) as u32;
             let rx1 = sx0 + ((tx + 1) as u64 * src_w as u64 / fit_w as u64) as u32;
             let ry0 = sy0 + (ty as u64 * src_h as u64 / fit_h as u64) as u32;
             let ry1 = sy0 + ((ty + 1) as u64 * src_h as u64 / fit_h as u64) as u32;
-            let (px, cov) = sample_region(src, fg, rx0, rx1.max(rx0 + 1), ry0, ry1.max(ry0 + 1));
+            let (rx1, ry1) = (rx1.max(rx0 + 1), ry1.max(ry0 + 1));
+            let (px, cov) = sample_region(
+                src,
+                fg,
+                rx0,
+                rx1,
+                ry0,
+                ry1,
+                features,
+                profile.features.saliency_weight,
+            );
             if cov >= profile.alpha.coverage_threshold {
                 cell.set(tx, ty, px);
                 cell_mask.set(tx, ty, true);
+                // Mark the cell as a feature cell if any source pixel in its
+                // region is identity-critical (face/eye/sunglasses).
+                if use_features && region_has_critical(features.unwrap(), rx0, rx1, ry0, ry1) {
+                    cell_feature.set(tx, ty, true);
+                }
             }
         }
     }
@@ -50,6 +80,7 @@ pub fn reconstruct(src: &Bitmap, fg: &Mask, profile: &Profile) -> Reconstructed 
     // Place the fitted cell inside the full canvas according to the anchor.
     let mut body = Bitmap::new(profile.target.width, profile.target.height);
     let mut body_mask = Mask::new(profile.target.width, profile.target.height);
+    let mut feature_mask = Mask::new(profile.target.width, profile.target.height);
     let off_x = reserved + (bw - fit_w) / 2;
     let off_y = match profile.anchor {
         Anchor::Center => reserved + (bh - fit_h) / 2,
@@ -60,20 +91,53 @@ pub fn reconstruct(src: &Bitmap, fg: &Mask, profile: &Profile) -> Reconstructed 
             if cell_mask.get(tx, ty) {
                 body.set(off_x + tx, off_y + ty, cell.get(tx, ty));
                 body_mask.set(off_x + tx, off_y + ty, true);
+                if cell_feature.get(tx, ty) {
+                    feature_mask.set(off_x + tx, off_y + ty, true);
+                }
             }
         }
     }
-    Reconstructed { body, body_mask }
+    Reconstructed {
+        body,
+        body_mask,
+        feature_mask,
+    }
+}
+
+/// True if any pixel in the source region is identity-critical.
+fn region_has_critical(f: &FeatureMap, x0: u32, x1: u32, y0: u32, y1: u32) -> bool {
+    for y in y0..y1.min(f.height) {
+        for x in x0..x1.min(f.width) {
+            if f.is_critical(x, y) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// Alpha-weighted linear-space average of a source region + foreground coverage.
-fn sample_region(src: &Bitmap, fg: &Mask, x0: u32, x1: u32, y0: u32, y1: u32) -> ([u8; 4], f32) {
+///
+/// When `features` is supplied and `saliency_weight > 1`, source pixels inside
+/// an identity-critical feature region contribute `saliency_weight`× more to
+/// the average, so small key features are not washed out by their surroundings.
+fn sample_region(
+    src: &Bitmap,
+    fg: &Mask,
+    x0: u32,
+    x1: u32,
+    y0: u32,
+    y1: u32,
+    features: Option<&FeatureMap>,
+    saliency_weight: f32,
+) -> ([u8; 4], f32) {
     let mut lr = 0f64;
     let mut lg = 0f64;
     let mut lb = 0f64;
     let mut wsum = 0f64;
     let mut fg_count = 0u32;
     let mut total = 0u32;
+    let use_features = features.map(|f| !f.is_empty()).unwrap_or(false) && saliency_weight > 1.0;
     for y in y0..y1 {
         for x in x0..x1 {
             total += 1;
@@ -83,10 +147,18 @@ fn sample_region(src: &Bitmap, fg: &Mask, x0: u32, x1: u32, y0: u32, y1: u32) ->
             fg_count += 1;
             let p = src.get(x, y);
             let a = p[3] as f64 / 255.0;
-            lr += srgb_to_linear(p[0]) as f64 * a;
-            lg += srgb_to_linear(p[1]) as f64 * a;
-            lb += srgb_to_linear(p[2]) as f64 * a;
-            wsum += a;
+            // Saliency weight: identity-critical pixels count more.
+            let saliency = if use_features {
+                let w = features.unwrap().weight_at(x, y) as f64;
+                1.0 + ((saliency_weight - 1.0) as f64) * w
+            } else {
+                1.0
+            };
+            let weight = a * saliency;
+            lr += srgb_to_linear(p[0]) as f64 * weight;
+            lg += srgb_to_linear(p[1]) as f64 * weight;
+            lb += srgb_to_linear(p[2]) as f64 * weight;
+            wsum += weight;
         }
     }
     let coverage = if total == 0 {
@@ -146,7 +218,7 @@ mod tests {
                 fg.set(x, y, true);
             }
         }
-        let recon = reconstruct(&src, &fg, &p);
+        let recon = reconstruct(&src, &fg, &p, None);
         assert_eq!(recon.body.width, p.target.width);
         assert_eq!(recon.body.height, p.target.height);
         assert!(recon.body_mask.count() > 0);

@@ -59,6 +59,26 @@ pub fn rgb_to_oklab(rgb: [u8; 3]) -> Oklab {
     )
 }
 
+/// Convert Oklab back to linear-sRGB (r,g,b), clamped to [0,1].
+pub fn oklab_to_linear_srgb(c: Oklab) -> (f32, f32, f32) {
+    let l_ = c.l + 0.3963377774 * c.a + 0.2158037573 * c.b;
+    let m_ = c.l - 0.1055613458 * c.a - 0.0638541728 * c.b;
+    let s_ = c.l - 0.0894841775 * c.a - 1.2914855480 * c.b;
+    let l = l_ * l_ * l_;
+    let m = m_ * m_ * m_;
+    let s = s_ * s_ * s_;
+    let r = 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s;
+    let g = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s;
+    let b = -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s;
+    (r.clamp(0.0, 1.0), g.clamp(0.0, 1.0), b.clamp(0.0, 1.0))
+}
+
+/// Convert an Oklab color back to an 8-bit sRGB pixel.
+pub fn oklab_to_rgb(c: Oklab) -> [u8; 3] {
+    let (r, g, b) = oklab_to_linear_srgb(c);
+    [linear_to_srgb(r), linear_to_srgb(g), linear_to_srgb(b)]
+}
+
 /// Squared Euclidean distance in Oklab space.
 #[inline]
 pub fn oklab_distance_sq(a: Oklab, b: Oklab) -> f32 {
@@ -89,5 +109,20 @@ mod tests {
         let black = rgb_to_oklab([0, 0, 0]);
         let white = rgb_to_oklab([255, 255, 255]);
         assert!(oklab_distance_sq(black, white) > 0.5);
+    }
+
+    #[test]
+    fn oklab_rgb_roundtrip_is_near_identity() {
+        for c in [[0, 0, 0], [255, 255, 255], [120, 30, 200], [17, 200, 90]] {
+            let back = oklab_to_rgb(rgb_to_oklab(c));
+            for ch in 0..3 {
+                assert!(
+                    (back[ch] as i32 - c[ch] as i32).abs() <= 1,
+                    "channel {ch}: {} vs {}",
+                    back[ch],
+                    c[ch]
+                );
+            }
+        }
     }
 }

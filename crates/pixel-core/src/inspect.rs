@@ -2,6 +2,7 @@
 
 use crate::bitmap::Bitmap;
 use crate::mask::{alpha_coverage, count_components, foreground_from_alpha};
+use crate::sheet::detect_grid;
 use serde::Serialize;
 use std::path::Path;
 
@@ -30,6 +31,12 @@ pub struct InspectResult {
     pub edge_foreground_ratio: f32,
     pub component_estimate: u32,
     pub touches_border: bool,
+    /// True when the input looks like a multi-sprite sheet and should be sliced
+    /// before conversion (PRD §0.2 pipeline entry).
+    pub is_sprite_sheet: bool,
+    /// Detected `[rows, cols]` grid when `is_sprite_sheet` is true.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sheet_grid: Option<[u32; 2]>,
     pub suggested_mode: SuggestedMode,
     pub confidence: f32,
     pub warnings: Vec<String>,
@@ -57,6 +64,16 @@ pub fn inspect(path: &Path, max_pixels: u64) -> Result<InspectResult, crate::err
     let touches_border = edge_fg > 0;
     let components = count_components(&fg);
 
+    // Sprite-sheet detection. Gutter analysis gives a best-effort grid; organic
+    // art whose poses nearly touch may only yield one reliable axis. We treat a
+    // detected grid OR a high component count as a sprite-sheet signal, but
+    // always recommend an explicit `--grid` because auto-detection is
+    // approximate for irregular silhouettes.
+    let grid = detect_grid(&src);
+    let many_components = components >= 6;
+    let is_sprite_sheet = matches!(grid, Some((r, c)) if r * c >= 2) || many_components;
+    let sheet_grid = grid.filter(|(r, c)| r * c >= 2).map(|(r, c)| [r, c]);
+
     let (mode, confidence) = if !has_alpha {
         (SuggestedMode::Semantic, 0.4)
     } else if edge_ratio > 0.1 {
@@ -69,7 +86,15 @@ pub fn inspect(path: &Path, max_pixels: u64) -> Result<InspectResult, crate::err
     if touches_border {
         warnings.push("foreground touches canvas border".into());
     }
-    if components > 4 {
+    if let Some([r, c]) = sheet_grid {
+        warnings.push(format!(
+            "looks like a sprite sheet (~{r}x{c}); slice with `convert --grid ROWSxCOLS` (auto-detect is approximate for organic art)"
+        ));
+    } else if is_sprite_sheet {
+        warnings.push(format!(
+            "{components} components suggest a sprite sheet; slice with `convert --grid ROWSxCOLS` or `--cell WxH`"
+        ));
+    } else if components > 4 {
         warnings.push(format!("{components} foreground components detected"));
     }
 
@@ -84,6 +109,8 @@ pub fn inspect(path: &Path, max_pixels: u64) -> Result<InspectResult, crate::err
         edge_foreground_ratio: edge_ratio,
         component_estimate: components,
         touches_border,
+        is_sprite_sheet,
+        sheet_grid,
         suggested_mode: mode,
         confidence,
         warnings,

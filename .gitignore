@@ -6,7 +6,9 @@ Cargo.lock.orig
 
 # PRD / internal design docs (kept local, not published)
 Pixel_Pipeline_*.md
+Pixel_Pipeline_*.docx
 /docs/prd/
+/prompts/
 
 # Editor / OS
 .idea/
@@ -20,3 +22,11 @@ Thumbs.db
 /.tmp/
 /scratch/
 *.log
+
+# Godot editor cache and generated imports
+**/.godot/
+examples/godot-demo/assets/
+examples/godot-demo/**/*.import
+
+# Large local source sheets used for visual validation (not published)
+examples/assets/

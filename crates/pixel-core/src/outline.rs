@@ -128,8 +128,8 @@ fn diagonal_body_count(body: &Mask, x: u32, y: u32) -> u32 {
 mod tests {
     use super::*;
     use pixel_formats::{
-        AlphaConfig, BackgroundMode, CleanupConfig, ColorSpace, Dithering, Fit, OutlineConfig,
-        PaletteConfig, Target, PROFILE_SCHEMA_VERSION,
+        AlphaConfig, BackgroundMode, CleanupConfig, ColorSpace, DetailConfigToml, Dithering,
+        FeatureConfigToml, Fit, OutlineConfig, PaletteConfig, Target, PROFILE_SCHEMA_VERSION,
     };
 
     fn profile(corner_rule: CornerRule, connectivity: u8) -> Profile {
@@ -153,14 +153,19 @@ mod tests {
                 max_colors: 8,
                 color_space: ColorSpace::Oklab,
                 dithering: Dithering::None,
+                posterize_levels: 0,
             },
             outline: OutlineConfig {
                 width: 1,
                 color: "#000000".into(),
                 connectivity,
                 corner_rule,
+                internal: false,
+                internal_threshold: 0.10,
             },
             cleanup: CleanupConfig::default(),
+            detail: DetailConfigToml::default(),
+            features: FeatureConfigToml::default(),
         }
     }
 

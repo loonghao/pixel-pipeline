@@ -47,9 +47,35 @@ pub fn parse_size(s: &str) -> Result<(u32, u32), FormatError> {
     Ok((w, h))
 }
 
+/// Parse a `ROWSxCOLS` grid string for sprite-sheet slicing.
+pub fn parse_grid(s: &str) -> Result<(u32, u32), FormatError> {
+    let (r, c) = s
+        .split_once(['x', 'X'])
+        .ok_or_else(|| FormatError::Parse(format!("invalid grid '{s}', expected ROWSxCOLS")))?;
+    let rows: u32 = r
+        .trim()
+        .parse()
+        .map_err(|_| FormatError::Parse(format!("invalid rows in '{s}'")))?;
+    let cols: u32 = c
+        .trim()
+        .parse()
+        .map_err(|_| FormatError::Parse(format!("invalid cols in '{s}'")))?;
+    if rows == 0 || cols == 0 {
+        return Err(FormatError::Parse("grid rows/cols must be > 0".into()));
+    }
+    Ok((rows, cols))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_grid() {
+        assert_eq!(parse_grid("2x3").unwrap(), (2, 3));
+        assert!(parse_grid("2").is_err());
+        assert!(parse_grid("0x3").is_err());
+    }
 
     #[test]
     fn parses_size() {

@@ -4,12 +4,13 @@ use crate::bitmap::{Bitmap, Mask, DEFAULT_MAX_PIXELS};
 use crate::compose::{compose_final, mask_to_bitmap, outline_to_bitmap};
 use crate::error::CoreError;
 use crate::grid::reconstruct;
+use crate::internal_outline::compile_internal_outline;
 use crate::mask::{
     alpha_coverage, count_components, foreground_from_alpha, foreground_from_corners,
     remove_small_components, MaskSource,
 };
 use crate::outline::compile_outline;
-use crate::palette::{distinct_colors, quantize};
+use crate::palette::{distinct_colors, posterize_lightness, quantize_with_lock};
 use pixel_formats::color::parse_hex_color;
 use pixel_formats::Profile;
 use std::path::Path;
@@ -18,12 +19,17 @@ use std::path::Path;
 #[derive(Debug, Clone)]
 pub struct ConvertOptions {
     pub max_pixels: u64,
+    /// Detect identity-critical features (face/eyes) with the heuristic
+    /// provider and weight/protect them during reconstruction (PRD §7.5
+    /// FR-RECON-004). Off by default; enable for character sprites.
+    pub detect_features: bool,
 }
 
 impl Default for ConvertOptions {
     fn default() -> Self {
         Self {
             max_pixels: DEFAULT_MAX_PIXELS,
+            detect_features: false,
         }
     }
 }
@@ -42,6 +48,7 @@ pub struct ConvertOutput {
     pub palette: Vec<[u8; 3]>,
     pub body_pixels: u32,
     pub outline_pixels: u32,
+    pub internal_outline_pixels: u32,
     pub body_components: u32,
     pub palette_colors: u32,
     pub body_pixels_in_reserved_border: u32,
@@ -57,7 +64,20 @@ pub fn convert(
     let bytes = std::fs::read(input).map_err(|e| CoreError::Io(e.to_string()))?;
     let input_sha256 = pixel_cache::sha256_hex(&bytes);
     let src = Bitmap::load(input, opts.max_pixels)?;
+    convert_bitmap(src, input_sha256, profile, opts)
+}
 
+/// Run the full deterministic conversion for an already-decoded bitmap.
+///
+/// This is the in-memory entry point used by sprite-sheet slicing, where each
+/// cell is a `Bitmap` rather than a file. `input_sha256` is the provenance
+/// hash the caller wants recorded (e.g. sheet hash plus cell coordinates).
+pub fn convert_bitmap(
+    src: Bitmap,
+    input_sha256: String,
+    profile: &Profile,
+    opts: &ConvertOptions,
+) -> Result<ConvertOutput, CoreError> {
     // Foreground mask: prefer alpha, fall back to corner background (=> review).
     let (fg, mask_source) = if alpha_coverage(&src) > 0.01 {
         (
@@ -71,10 +91,44 @@ pub fn convert(
         )
     };
 
-    // Reconstruct onto the target grid.
-    let recon = reconstruct(&src, &fg, profile);
+    // Optional contrast-aware detail preservation (PRD §14.3). Runs on the
+    // source *before* downsampling so small high-contrast features (hair
+    // strands, eyes, weapon tips) survive into the low-resolution sprite. The
+    // foreground mask is unchanged, so silhouette QA is unaffected.
+    let mut src = src;
+    if profile.detail.radius > 0 {
+        crate::detail::preserve_details(
+            &mut src,
+            &fg,
+            crate::detail::DetailConfig {
+                radius: profile.detail.radius,
+                iterations: profile.detail.iterations,
+            },
+        );
+    }
+
+    // Optional identity-critical feature detection (PRD §7.5 FR-RECON-004).
+    // A Semantic Provider (here the deterministic heuristic fallback) marks
+    // face/eye regions so the reconstructor weights them higher and the
+    // palette stage can lock their colors. Providers only supply candidates;
+    // they never bypass deterministic QA (DEC-006).
+    let features = if opts.detect_features {
+        let provider = crate::heuristic_provider::HeuristicProvider::default();
+        let (map, _prov) = provider.analyze_bitmap(&src, &input_sha256);
+        if map.is_empty() {
+            None
+        } else {
+            Some(map)
+        }
+    } else {
+        None
+    };
+
+    // Reconstruct onto the target grid, weighting identity-critical regions.
+    let recon = reconstruct(&src, &fg, profile, features.as_ref());
     let mut body = recon.body;
     let mut body_mask = recon.body_mask;
+    let feature_mask = recon.feature_mask;
 
     // Body-mask cleanup (PRD §14.4).
     remove_small_components(&mut body_mask, profile.cleanup.min_component_pixels);
@@ -87,13 +141,55 @@ pub fn convert(
         }
     }
 
-    // Palette quantization.
-    let palette = quantize(&mut body, &body_mask, profile.palette.max_colors);
-    let palette_colors = distinct_colors(&body, &body_mask);
+    // Optional lightness posterization (cel-shading bands) before quantization.
+    // We posterize only lightness (not chroma): hue separation is handled by the
+    // Oklab median-cut quantizer, which keeps perceptually distinct hues (e.g.
+    // white dress vs. skin) apart instead of collapsing them into one band.
+    if profile.palette.posterize_levels >= 2 {
+        posterize_lightness(&mut body, &body_mask, profile.palette.posterize_levels);
+    }
+
+    // Palette quantization. When internal outlines are enabled, reserve one
+    // slot for the outline color so the recolored sprite never exceeds
+    // `max_colors` (the internal-outline color is counted in the budget).
+    let reserve_for_internal = if profile.outline.internal { 1 } else { 0 };
+    let color_budget = profile
+        .palette
+        .max_colors
+        .saturating_sub(reserve_for_internal)
+        .max(1);
+    // Lock identity-critical feature colors (face/eyes/...) so quantization
+    // never merges them into a neighbour (FR-PALETTE-005). Only active when a
+    // FeatureMap was supplied during reconstruction and the profile enables it.
+    let lock = if profile.features.lock_feature_colors && feature_mask.count() > 0 {
+        Some(&feature_mask)
+    } else {
+        None
+    };
+    let palette = quantize_with_lock(&mut body, &body_mask, lock, color_budget);
 
     // Outline compilation from the body mask.
     let outline_mask = compile_outline(&body_mask, profile);
     let outline_rgba = parse_hex_color(&profile.outline.color).map_err(CoreError::Invalid)?;
+
+    // Optional internal outlines: recolor body pixels on perceptual boundaries
+    // to the outline color. These stay inside the body mask, so they never
+    // affect the external-outline QA gate (PRD §14.6).
+    let mut internal_outline_pixels = 0;
+    if profile.outline.internal {
+        let edges = compile_internal_outline(&body, &body_mask, profile.outline.internal_threshold);
+        for y in 0..body.height {
+            for x in 0..body.width {
+                if edges.get(x, y) {
+                    body.set(x, y, outline_rgba);
+                }
+            }
+        }
+        internal_outline_pixels = edges.count();
+    }
+
+    // Count palette colors after any internal-outline recolor.
+    let palette_colors = distinct_colors(&body, &body_mask);
 
     // Composition.
     let final_png = compose_final(&body, &outline_mask, outline_rgba);
@@ -121,6 +217,7 @@ pub fn convert(
         palette,
         body_pixels,
         outline_pixels,
+        internal_outline_pixels,
         body_components,
         palette_colors,
         body_pixels_in_reserved_border,

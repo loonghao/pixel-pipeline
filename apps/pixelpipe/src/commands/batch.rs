@@ -91,6 +91,7 @@ fn process(task: &BatchTask, args: &Args) -> Outcome {
         outline_color: task.outline_color.clone(),
         max_pixels: args.max_pixels,
         write_sidecars: true,
+        detect_features: false,
     };
     match run_conversion(&params) {
         Ok(report) => Outcome::Report(Box::new(report)),

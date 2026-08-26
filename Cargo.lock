@@ -421,6 +421,7 @@ dependencies = [
  "image",
  "pixel-cache",
  "pixel-formats",
+ "pixel-provider",
  "serde",
  "sha2",
  "tempfile",

@@ -15,6 +15,7 @@ hex.workspace = true
 serde.workspace = true
 pixel-formats.workspace = true
 pixel-cache.workspace = true
+pixel-provider.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

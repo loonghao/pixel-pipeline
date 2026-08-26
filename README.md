@@ -15,9 +15,11 @@ be consumed by agents, CI, and tooling — not just humans.
 
 - **Deterministic pipeline** — same input + profile ⇒ byte-identical output.
 - **True pixels** — area-coverage grid reconstruction, not naive downscaling.
-- **Compiled outlines** — outlines are *derived* from the body mask with
-  pixel-art corner rules, never traced from source RGB.
-- **Oklab palettes** — median-cut quantization with a hard color budget.
+- **Compiled outlines** — outer outlines are *derived* from the body mask with
+  pixel-art corner rules; optional internal outlines come from Oklab colour
+  boundaries, never traced from source RGB.
+- **Oklab palettes** — median-cut quantization in Oklab with a hard color
+  budget and optional lightness posterization into flat cel-shading bands.
 - **A real quality gate** — hard rules produce stable reason codes; ambiguous
   segmentation can never silently `pass` (it is forced to `review`).
 - **Agent-friendly CLI** — JSON on stdout, logs on stderr, status exit codes,
@@ -42,6 +44,12 @@ pixelpipe inspect hero.png --pretty
 
 # 2. Convert to a 48x48 true-pixel sprite with the built-in profile
 pixelpipe convert hero.png -o out/hero.png --profile character-48 --pretty
+
+# 2b. Slice a sprite sheet, then convert each cell
+pixelpipe convert sheet.png -o out/idle.png --profile character-48 --grid 4x4
+
+# 2c. Preserve identity-critical features (face/eyes) during reconstruction
+pixelpipe convert hero.png -o out/hero.png --profile character-48 --detect-features
 
 # 3. Validate an existing sprite against a profile's hard rules
 pixelpipe validate out/hero.png --profile character-48 \
@@ -70,9 +78,9 @@ Profiles are versioned TOML files describing the target grid, alpha handling,
 palette budget, outline, and cleanup rules. Built-in profiles ship in the
 binary; point `--profile` at a file path to use your own.
 
-- `character-32` — 32×32, 12 colors
-- `character-48` — 48×48, 16 colors
-- `character-64` — 64×64, 24 colors
+- `character-32` — 32×32, 10 colors, 3-level posterize, internal outlines
+- `character-48` — 48×48, 12 colors, 4-level posterize, internal outlines
+- `character-64` — 64×64, 16 colors, 4-level posterize, internal outlines
 
 See [`profiles/`](profiles/) for the full schema.
 
@@ -96,7 +104,7 @@ outcomes without parsing prose.
 | `pixel-core`             | Deterministic conversion pipeline.                   |
 | `pixel-qa`               | Static QA and the release gate.                      |
 | `pixel-cache`            | Content-addressed cache key helpers.                 |
-| `pixel-provider`         | Provider interfaces (semantic / animation) — stubs.  |
+| `pixel-provider`         | Semantic feature analysis (heuristic fallback + ONNX stub). |
 | `pixelpipe` (`apps/`)    | The CLI.                                             |
 
 ## Development

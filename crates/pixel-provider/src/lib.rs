@@ -35,6 +35,19 @@ pub struct SegmentRequest {
     pub height: u32,
 }
 
+// Feature types live in pixel-formats (the shared contract layer) so both the
+// deterministic core (grid/palette) and providers can use them without a
+// circular dependency. Re-export for convenience.
+pub use pixel_formats::{FeatureKind, FeatureMap, FeatureRegion};
+
+/// Request to analyze identity-critical features of a source image.
+#[derive(Debug, Clone)]
+pub struct FeatureRequest {
+    pub input_sha256: String,
+    pub width: u32,
+    pub height: u32,
+}
+
 /// Semantic provider that assists reconstruction of complex inputs (M3).
 pub trait SemanticProvider {
     /// Return a foreground mask (row-major, 1 = foreground) with provenance.
@@ -42,6 +55,17 @@ pub trait SemanticProvider {
         &self,
         request: SegmentRequest,
     ) -> Result<(Vec<u8>, ProviderProvenance), ProviderError>;
+
+    /// Detect identity-critical feature regions (face/eyes/sunglasses/...).
+    /// Default: no features (providers that only segment can skip this).
+    fn analyze_features(
+        &self,
+        _request: FeatureRequest,
+    ) -> Result<(FeatureMap, ProviderProvenance), ProviderError> {
+        Err(ProviderError::Unavailable(
+            "feature analysis not supported by this provider".into(),
+        ))
+    }
 }
 
 /// Request to generate animation candidate frames (M4).
