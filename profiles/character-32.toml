@@ -10,21 +10,36 @@ height = 32
 
 [alpha]
 threshold = 96
-coverage_threshold = 0.45
+coverage_threshold = 0.5
 background = "auto"
 background_tolerance = 24
 
 [palette]
-max_colors = 12
+max_colors = 10
 color_space = "oklab"
 dithering = "none"
+posterize_levels = 3
 
 [outline]
 width = 1
 color = "#2b1009"
 connectivity = 8
 corner_rule = "pixel-art"
+internal = true
+internal_threshold = 0.14
 
 [cleanup]
 min_component_pixels = 1
 fill_single_pixel_holes = false
+max_body_components = 6
+
+[detail]
+# Contrast-aware detail preservation (PRD §14.3). radius=0 disables it; the
+# current O(w*h*r^2) windowed-median is too slow for large sources, so keep it
+# off by default until the sliding-window optimization lands. Enable per-asset.
+radius = 0
+iterations = 1
+
+[features]
+saliency_weight = 2.0
+lock_feature_colors = true

@@ -71,6 +71,63 @@ pub struct PaletteConfig {
     pub color_space: ColorSpace,
     #[serde(default = "default_dithering")]
     pub dithering: Dithering,
+    /// Number of flat lightness bands to snap body colors to before quantizing
+    /// (cel-shading / posterization). `0` disables it and preserves the smooth
+    /// area-averaged reconstruction. This is a stylization step layered on top
+    /// of the deterministic reconstruction (PRD §14.5 note on shading bands).
+    #[serde(default)]
+    pub posterize_levels: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DetailConfigToml {
+    /// Local window half-size for contrast-aware detail preservation
+    /// (PRD §14.3 saliency/edge weight). `0` disables the pass entirely.
+    #[serde(default)]
+    pub radius: u32,
+    /// Erode/dilate iterations for the expansion.
+    #[serde(default = "default_detail_iterations")]
+    pub iterations: u32,
+}
+
+fn default_detail_iterations() -> u32 {
+    1
+}
+
+impl Default for DetailConfigToml {
+    fn default() -> Self {
+        Self {
+            radius: 0,
+            iterations: 1,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct FeatureConfigToml {
+    /// Sampling-weight multiplier applied to identity-critical feature regions
+    /// (face/eyes/...) during target-grid reconstruction (PRD §14.3 saliency /
+    /// Feature Map weight). `1.0` = no extra weight; values > 1 make key
+    /// features survive downsampling. Only used when a FeatureMap is supplied.
+    #[serde(default = "default_saliency_weight")]
+    pub saliency_weight: f32,
+    /// Lock the colors of identity-critical feature pixels so palette
+    /// quantization never merges them into a neighbour (FR-PALETTE-005).
+    #[serde(default)]
+    pub lock_feature_colors: bool,
+}
+
+fn default_saliency_weight() -> f32 {
+    1.0
+}
+
+impl Default for FeatureConfigToml {
+    fn default() -> Self {
+        Self {
+            saliency_weight: 1.0,
+            lock_feature_colors: false,
+        }
+    }
 }
 
 fn default_color_space() -> ColorSpace {
@@ -95,6 +152,17 @@ pub struct OutlineConfig {
     pub connectivity: u8,
     #[serde(default = "default_corner_rule")]
     pub corner_rule: CornerRule,
+    /// Draw deterministic internal outlines between adjacent body regions whose
+    /// perceptual color differs by more than `internal_threshold` (PRD §14.6
+    /// open question on internal contours). `false` keeps only the external
+    /// one-pixel outline. Internal-outline pixels stay inside the body mask, so
+    /// they never affect the external-outline QA gate (`actual == expected`).
+    #[serde(default)]
+    pub internal: bool,
+    /// Oklab distance above which an internal boundary becomes an internal
+    /// outline line. Only used when `internal = true`.
+    #[serde(default = "default_internal_threshold")]
+    pub internal_threshold: f32,
 }
 
 fn default_connectivity() -> u8 {
@@ -103,6 +171,9 @@ fn default_connectivity() -> u8 {
 fn default_corner_rule() -> CornerRule {
     CornerRule::PixelArt
 }
+fn default_internal_threshold() -> f32 {
+    0.10
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CleanupConfig {
@@ -110,6 +181,12 @@ pub struct CleanupConfig {
     pub min_component_pixels: u32,
     #[serde(default)]
     pub fill_single_pixel_holes: bool,
+    /// Maximum allowed body connected components before a result is flagged
+    /// (PRD §2.1, DEC-008). `0` disables the check. A single-subject sprite is
+    /// usually one component plus a few legitimate detached parts; a value well
+    /// above that catches whole sprite sheets squashed into one canvas.
+    #[serde(default)]
+    pub max_body_components: u32,
 }
 
 fn default_min_component_pixels() -> u32 {
@@ -121,6 +198,7 @@ impl Default for CleanupConfig {
         Self {
             min_component_pixels: 1,
             fill_single_pixel_holes: false,
+            max_body_components: 0,
         }
     }
 }
@@ -142,6 +220,13 @@ pub struct Profile {
     pub outline: OutlineConfig,
     #[serde(default)]
     pub cleanup: CleanupConfig,
+    /// Optional contrast-aware detail preservation (PRD §14.3). Default off.
+    #[serde(default)]
+    pub detail: DetailConfigToml,
+    /// Optional identity-critical feature weighting (PRD §7.5 FR-RECON-004).
+    /// Only used when a Semantic Provider supplies a FeatureMap.
+    #[serde(default)]
+    pub features: FeatureConfigToml,
 }
 
 impl Profile {

@@ -51,6 +51,7 @@ pub enum ReasonCode {
     OutlineExtraPixels,
     OutlineMissingPixels,
     OutlineColorMismatch,
+    BodyComponentsExceeded,
     SemanticConfidenceLow,
     TemporalTopologyDrift,
     PivotDrift,

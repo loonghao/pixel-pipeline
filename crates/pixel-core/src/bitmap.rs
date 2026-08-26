@@ -89,6 +89,23 @@ impl Bitmap {
         Ok(out.into_inner())
     }
 
+    /// Copy a rectangular sub-region into a new bitmap. The rectangle is
+    /// clamped to the bitmap bounds; an empty rectangle yields a 0-sized
+    /// bitmap. Used by sprite-sheet slicing (PRD §0.2 pipeline entry).
+    pub fn crop(&self, x: u32, y: u32, w: u32, h: u32) -> Bitmap {
+        let x1 = (x + w).min(self.width);
+        let y1 = (y + h).min(self.height);
+        let x0 = x.min(x1);
+        let y0 = y.min(y1);
+        let mut out = Bitmap::new(x1 - x0, y1 - y0);
+        for yy in y0..y1 {
+            for xx in x0..x1 {
+                out.set(xx - x0, yy - y0, self.get(xx, yy));
+            }
+        }
+        out
+    }
+
     /// Nearest-neighbour integer upscale for previews (PRD §7.10).
     pub fn upscale_nearest(&self, factor: u32) -> Bitmap {
         let factor = factor.max(1);

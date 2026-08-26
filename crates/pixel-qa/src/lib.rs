@@ -55,6 +55,24 @@ pub fn evaluate(input: &QaInput) -> (Status, Vec<Reason>) {
         status = status.merge(Status::Fail);
     }
 
+    // Too many disconnected body components usually means the input was a
+    // whole sprite sheet (or a noisy multi-subject image) squashed into one
+    // canvas rather than a single clean subject. That is a composition
+    // ambiguity, not a hard asset rule, so it routes to `review` (PRD §7.11,
+    // DEC-008) and never silently passes.
+    let max_components = input.profile.cleanup.max_body_components;
+    if max_components > 0 && m.body_components > max_components && status == Status::Pass {
+        reasons.push(Reason::with_detail(
+            ReasonCode::BodyComponentsExceeded,
+            Status::Review,
+            format!(
+                "{} body components exceed max {} (input may be a sprite sheet)",
+                m.body_components, max_components
+            ),
+        ));
+        status = status.merge(Status::Review);
+    }
+
     // Corner-background inference can never auto-pass (PRD FR-MASK-002, §7.11).
     if matches!(input.mask_source, MaskSource::CornerBackground) && status == Status::Pass {
         reasons.push(Reason::with_detail(
@@ -141,6 +159,38 @@ mod tests {
             mask_source: MaskSource::Alpha,
         };
         assert_eq!(evaluate(&input).0, Status::Fail);
+    }
+
+    #[test]
+    fn too_many_components_forces_review() {
+        let mut p = crate::tests::dummy_profile();
+        p.cleanup.max_body_components = 6;
+        let mut m = base_metrics();
+        m.body_components = 13;
+        let input = QaInput {
+            profile: &p,
+            metrics: m,
+            mask_source: MaskSource::Alpha,
+        };
+        let (status, reasons) = evaluate(&input);
+        assert_eq!(status, Status::Review);
+        assert!(reasons
+            .iter()
+            .any(|r| r.code == ReasonCode::BodyComponentsExceeded));
+    }
+
+    #[test]
+    fn components_within_limit_pass() {
+        let mut p = crate::tests::dummy_profile();
+        p.cleanup.max_body_components = 6;
+        let mut m = base_metrics();
+        m.body_components = 3;
+        let input = QaInput {
+            profile: &p,
+            metrics: m,
+            mask_source: MaskSource::Alpha,
+        };
+        assert_eq!(evaluate(&input).0, Status::Pass);
     }
 
     #[test]
