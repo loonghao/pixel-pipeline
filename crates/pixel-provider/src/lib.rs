@@ -83,3 +83,42 @@ pub trait AnimationProvider {
         request: AnimationRequest,
     ) -> Result<Vec<(Vec<u8>, ProviderProvenance)>, ProviderError>;
 }
+
+/// Request to generate pixel-art sprite candidates from a prompt and/or a
+/// reference image (e.g. Retro Diffusion-class native low-res models).
+#[derive(Debug, Clone)]
+pub struct GenerationRequest {
+    /// Text prompt describing the desired sprite (may be empty when a
+    /// reference image drives the generation).
+    pub prompt: String,
+    /// SHA-256 of an optional reference image already resolved by the caller.
+    pub reference_sha256: Option<String>,
+    /// Target sprite dimensions; providers must generate at (or natively for)
+    /// this resolution, not upscale-then-filter.
+    pub width: u32,
+    pub height: u32,
+    /// Deterministic seed forwarded to the model.
+    pub seed: u64,
+    /// Number of candidates to return (the compiler + QA gates pick winners).
+    pub candidates: u32,
+}
+
+/// A single generated candidate: RGBA8 pixels (row-major, `width * height * 4`
+/// bytes at the requested dimensions) plus provenance.
+#[derive(Debug, Clone)]
+pub struct GenerationCandidate {
+    pub rgba: Vec<u8>,
+    pub provenance: ProviderProvenance,
+}
+
+/// Generative provider that produces sprite candidates (PRD §13.3, DEC-006).
+///
+/// Candidates are *inputs* to the deterministic pipeline: every candidate is
+/// still compiled (grid/palette/outline) and must pass the QA gates before it
+/// can ship. Providers never bypass QA.
+pub trait GenerationProvider {
+    fn generate(
+        &self,
+        request: GenerationRequest,
+    ) -> Result<Vec<GenerationCandidate>, ProviderError>;
+}

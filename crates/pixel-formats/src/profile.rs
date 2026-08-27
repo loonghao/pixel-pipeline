@@ -77,6 +77,83 @@ pub struct PaletteConfig {
     /// of the deterministic reconstruction (PRD §14.5 note on shading bands).
     #[serde(default)]
     pub posterize_levels: u32,
+    /// Build the palette from *source-resolution* pixels and quantize the
+    /// source before downsampling (quantize-then-snap order, PRD §14.5).
+    /// Small identity-critical regions (eyes, sunglasses) still have thousands
+    /// of pixels at source resolution, so they win palette slots that they
+    /// would lose when quantizing the already-downsampled grid. Pair with
+    /// `sampling.mode = "mode"` so each cell votes among exact palette colors.
+    #[serde(default)]
+    pub quantize_source: bool,
+    /// In sprite-sheet mode, build one palette from *all* cells and share it
+    /// across every frame (Aseprite's "New Palette from Sprite": all frames
+    /// feed a single histogram). Eliminates frame-to-frame color flicker in
+    /// animations. Ignored for single-sprite conversions.
+    #[serde(default = "default_sheet_shared")]
+    pub sheet_shared: bool,
+}
+
+fn default_sheet_shared() -> bool {
+    true
+}
+
+/// How a target cell samples its source region (PRD §7.5).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SamplingMode {
+    /// Alpha-weighted linear-space average (deterministic baseline).
+    #[default]
+    Area,
+    /// Dominant-cluster centroid per cell (K-Centroid): a small k-means in
+    /// Oklab keeps hard edges instead of averaging them away.
+    KCentroid,
+    /// Weighted majority vote of exact colors per cell. Intended for the
+    /// quantize-then-snap order (`palette.quantize_source = true`), where the
+    /// source is already palette-quantized: each cell then picks its dominant
+    /// palette color, exactly like a pixel artist filling a grid cell.
+    Mode,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SamplingConfig {
+    #[serde(default)]
+    pub mode: SamplingMode,
+    /// Number of color clusters per cell for `k-centroid` (2 recommended;
+    /// more clusters reintroduce noise).
+    #[serde(default = "default_centroids")]
+    pub centroids: u32,
+}
+
+fn default_centroids() -> u32 {
+    2
+}
+
+impl Default for SamplingConfig {
+    fn default() -> Self {
+        Self {
+            mode: SamplingMode::Area,
+            centroids: 2,
+        }
+    }
+}
+
+/// Post-quantization pixel-art convergence pass (Gerstner-style refinement).
+/// All steps are deterministic, only reuse existing palette colors and never
+/// touch identity-critical feature pixels. Default off (schema-compatible with
+/// older profiles); the shipped character profiles enable it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OptimizeConfigToml {
+    /// Lloyd iterations alternating palette refinement and pixel re-assignment
+    /// after median-cut. `0` disables.
+    #[serde(default)]
+    pub palette_iterations: u32,
+    /// Absorb orphan pixels (no same-color neighbour) into the dominant
+    /// neighbouring color.
+    #[serde(default)]
+    pub merge_orphans: bool,
+    /// Remove single-pixel stair artifacts (jaggies) on color boundaries.
+    #[serde(default)]
+    pub jaggy_cleanup: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -220,6 +297,12 @@ pub struct Profile {
     pub outline: OutlineConfig,
     #[serde(default)]
     pub cleanup: CleanupConfig,
+    /// How target cells sample the source (PRD §7.5). Default: area average.
+    #[serde(default)]
+    pub sampling: SamplingConfig,
+    /// Optional post-quantization convergence pass. Default off.
+    #[serde(default)]
+    pub optimize: OptimizeConfigToml,
     /// Optional contrast-aware detail preservation (PRD §14.3). Default off.
     #[serde(default)]
     pub detail: DetailConfigToml,
@@ -269,6 +352,11 @@ impl Profile {
         if self.outline.connectivity != 4 && self.outline.connectivity != 8 {
             return Err(FormatError::Validation(
                 "outline.connectivity must be 4 or 8".into(),
+            ));
+        }
+        if self.sampling.centroids == 0 {
+            return Err(FormatError::Validation(
+                "sampling.centroids must be > 0".into(),
             ));
         }
         let reserved = self.outline.width + self.transparent_margin;

@@ -129,7 +129,8 @@ mod tests {
     use super::*;
     use pixel_formats::{
         AlphaConfig, BackgroundMode, CleanupConfig, ColorSpace, DetailConfigToml, Dithering,
-        FeatureConfigToml, Fit, OutlineConfig, PaletteConfig, Target, PROFILE_SCHEMA_VERSION,
+        FeatureConfigToml, Fit, OptimizeConfigToml, OutlineConfig, PaletteConfig, SamplingConfig,
+        Target, PROFILE_SCHEMA_VERSION,
     };
 
     fn profile(corner_rule: CornerRule, connectivity: u8) -> Profile {
@@ -154,6 +155,8 @@ mod tests {
                 color_space: ColorSpace::Oklab,
                 dithering: Dithering::None,
                 posterize_levels: 0,
+                quantize_source: false,
+                sheet_shared: true,
             },
             outline: OutlineConfig {
                 width: 1,
@@ -164,6 +167,8 @@ mod tests {
                 internal_threshold: 0.10,
             },
             cleanup: CleanupConfig::default(),
+            sampling: SamplingConfig::default(),
+            optimize: OptimizeConfigToml::default(),
             detail: DetailConfigToml::default(),
             features: FeatureConfigToml::default(),
         }

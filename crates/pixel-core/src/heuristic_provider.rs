@@ -38,7 +38,7 @@ impl HeuristicProvider {
     ) -> (FeatureMap, ProviderProvenance) {
         let (w, h) = (src.width, src.height);
         let skin = skin_mask(src);
-        let face_bbox = largest_component_bbox(&skin, w, h);
+        let face_bbox = face_component_bbox(&skin, w, h);
 
         let mut regions = Vec::new();
         if let Some(bbox) = face_bbox {
@@ -100,9 +100,12 @@ impl SemanticProvider for HeuristicProvider {
 /// Skin-tone test in Oklab: warm hue, mid-to-high lightness, moderate chroma.
 fn is_skin(rgb: [u8; 3]) -> bool {
     let lab = rgb_to_oklab(rgb);
-    // Oklab skin cluster (empirical): L in ~[0.55,0.9], a slightly positive
-    // (red), b positive (yellow). Tuned to catch faces but not white cloth.
-    lab.l > 0.5 && lab.l < 0.92 && lab.a > 0.02 && lab.b > 0.03 && lab.b < 0.2
+    // Oklab skin cluster (empirical): L in ~[0.55,0.9], a clearly positive
+    // (red), b clearly positive (yellow). The chroma floor matters: cream /
+    // off-white clothing has faintly warm shadows (a ≈ 0.01-0.02) that must
+    // NOT count as skin, or the "face" blob swallows the whole outfit and the
+    // feature palette budget tints everything peach.
+    lab.l > 0.5 && lab.l < 0.92 && lab.a > 0.035 && lab.b > 0.05 && lab.b < 0.2
 }
 
 /// Binary mask of skin-tone pixels.
@@ -120,11 +123,17 @@ fn skin_mask(src: &Bitmap) -> Vec<bool> {
     m
 }
 
-/// Bbox of the largest 4-connected component in a boolean mask.
-fn largest_component_bbox(mask: &[bool], w: u32, h: u32) -> Option<(u32, u32, u32, u32)> {
+/// Bbox of the largest *plausible face* component in the skin mask.
+///
+/// A face bbox should be a modest fraction of the image; when the largest
+/// skin blob covers too much area it is almost certainly a warm outfit or
+/// background, so we fall back to the next-largest component that fits. This
+/// keeps the feature budget from being spent on clothing.
+fn face_component_bbox(mask: &[bool], w: u32, h: u32) -> Option<(u32, u32, u32, u32)> {
+    let max_bbox_area = (w as u64 * h as u64) / 3; // face bbox ≤ 1/3 of image
     let (w, h) = (w as usize, h as usize);
     let mut visited = vec![false; w * h];
-    let mut best: Option<(usize, (u32, u32, u32, u32))> = None;
+    let mut components: Vec<(usize, (u32, u32, u32, u32))> = Vec::new();
     for start in 0..(w * h) {
         if !mask[start] || visited[start] {
             continue;
@@ -144,22 +153,31 @@ fn largest_component_bbox(mask: &[bool], w: u32, h: u32) -> Option<(u32, u32, u3
             y0 = y0.min(y);
             x1 = x1.max(x + 1);
             y1 = y1.max(y + 1);
-            for nb in [i.wrapping_sub(1), i + 1, i.wrapping_sub(w), i + w] {
-                let (nx, ny) = ((nb % w) as i32, (nb / w) as i32);
-                if nb < w * h && nx >= 0 && ny >= 0 && !visited[nb] && mask[nb] {
-                    // avoid horizontal wrap-around
-                    let same_row = (nb % w) as i32
-                        == (i % w) as i32 + (nb as i32 - i as i32).signum().max(0).min(1);
-                    let _ = same_row;
-                    stack.push(nb);
-                }
+            let (cx, cy) = (i % w, i / w);
+            if cx + 1 < w && mask[i + 1] && !visited[i + 1] {
+                stack.push(i + 1);
+            }
+            if cx >= 1 && mask[i - 1] && !visited[i - 1] {
+                stack.push(i - 1);
+            }
+            if cy + 1 < h && mask[i + w] && !visited[i + w] {
+                stack.push(i + w);
+            }
+            if cy >= 1 && mask[i - w] && !visited[i - w] {
+                stack.push(i - w);
             }
         }
-        if best.map(|(c, _)| count > c).unwrap_or(true) {
-            best = Some((count, (x0, y0, x1, y1)));
-        }
+        components.push((count, (x0, y0, x1, y1)));
     }
-    best.map(|(_, bb)| bb)
+    // Largest first; skip blobs whose bbox is implausibly large for a face.
+    components.sort_by_key(|c| std::cmp::Reverse(c.0));
+    components
+        .into_iter()
+        .find(|(_, (x0, y0, x1, y1))| {
+            let area = (x1 - x0) as u64 * (y1 - y0) as u64;
+            area <= max_bbox_area
+        })
+        .map(|(_, bb)| bb)
 }
 
 /// Small dark connected regions inside the face bbox (eyes / sunglasses).

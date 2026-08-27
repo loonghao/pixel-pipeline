@@ -36,7 +36,7 @@ foreach ($s in $sizes) {
     foreach ($j in $jobs) {
         $in = Join-Path $src $j.file
         $dst = Join-Path $sizeOut ($j.name + ".png")
-        & $bin convert $in -o $dst --profile $s.profile --grid $j.grid --no-sidecars 1>$null
+        & $bin convert $in -o $dst --profile $s.profile --grid $j.grid --detect-features --no-sidecars 1>$null
         Write-Host ("{0}/{1}: grid {2} -> exit {3}" -f $s.dir, $j.name, $j.grid, $LASTEXITCODE)
     }
 }

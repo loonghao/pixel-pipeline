@@ -92,6 +92,7 @@ fn process(task: &BatchTask, args: &Args) -> Outcome {
         max_pixels: args.max_pixels,
         write_sidecars: true,
         detect_features: false,
+        emit_palette: false,
     };
     match run_conversion(&params) {
         Ok(report) => Outcome::Report(Box::new(report)),

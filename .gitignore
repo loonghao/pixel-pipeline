@@ -22,6 +22,8 @@ Thumbs.db
 /.tmp/
 /scratch/
 *.log
+# Visual-comparison sheets produced during manual review
+/compare_*.png
 
 # Godot editor cache and generated imports
 **/.godot/

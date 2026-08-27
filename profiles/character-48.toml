@@ -18,14 +18,27 @@ background_tolerance = 24
 max_colors = 12
 color_space = "oklab"
 dithering = "none"
-posterize_levels = 3
+# Posterize is disabled for the quantize-then-snap order: crushing lightness
+# *before* the source-resolution palette is built collapses identity colors
+# (skin, sunglasses); the 12-color budget already produces flat bands.
+posterize_levels = 0
+# Quantize-then-snap (PRD §14.5): build the palette at source resolution where
+# small identity-critical regions (eyes, skin) still win palette slots.
+quantize_source = true
+# In sprite-sheet mode, build one palette from all cells and share it across
+# every frame (Aseprite-style), so animations never flicker between
+# frame-local palettes.
+sheet_shared = true
 
 [outline]
 width = 1
 color = "#2b1009"
 connectivity = 8
 corner_rule = "pixel-art"
-internal = true
+# Internal outlines are off for the quantize-then-snap order: exact palette
+# boundaries are already crisp, and edge recoloring eats small features
+# (sunglass lenses, eyes). The external outline is unaffected.
+internal = false
 internal_threshold = 0.12
 
 [cleanup]
@@ -33,13 +46,26 @@ min_component_pixels = 1
 fill_single_pixel_holes = false
 max_body_components = 6
 
+[sampling]
+# Majority vote per cell over the already-quantized source (pairs with
+# palette.quantize_source): each cell picks its dominant palette color.
+mode = "mode"
+centroids = 2
+
+[optimize]
+# Pixel-art convergence pass (PRD §14.5): Lloyd palette refinement plus
+# cluster-cleanliness rules. Deterministic; the palette can only shrink.
+palette_iterations = 3
+merge_orphans = true
+jaggy_cleanup = true
+
 [detail]
-# Contrast-aware detail preservation (PRD §14.3). radius=0 disables it; the
-# current O(w*h*r^2) windowed-median is too slow for large sources, so keep it
-# off by default until the sliding-window optimization lands. Enable per-asset.
-radius = 0
+# Contrast-aware detail preservation (PRD §14.3), O(n) sliding-window
+# implementation. Expands small high-contrast features (hair strands, eyes)
+# before downsampling so they survive at low resolution.
+radius = 2
 iterations = 1
 
 [features]
-saliency_weight = 2.0
+saliency_weight = 4.0
 lock_feature_colors = true

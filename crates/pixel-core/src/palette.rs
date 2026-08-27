@@ -5,6 +5,7 @@
 
 use crate::bitmap::{Bitmap, Mask};
 use crate::oklab::{oklab_distance_sq, oklab_to_rgb, rgb_to_oklab, Oklab};
+use pixel_formats::FeatureMap;
 
 /// Snap each body pixel's Oklab lightness to one of `levels` evenly spaced
 /// bands, preserving chroma (a, b). This posterizes smooth shading into flat
@@ -148,6 +149,121 @@ pub fn quantize_with_lock(
     palette
 }
 
+/// Build a palette from *source-resolution* foreground pixels (PRD §14.5
+/// quantize-then-snap order). At source resolution small identity-critical
+/// regions (eyes, sunglasses, skin) still have thousands of pixels, so they
+/// keep palette slots they would lose after downsampling. Pixels are weighted
+/// by alpha × saliency, and — when a FeatureMap is present — feature pixels
+/// additionally get a dedicated budget share (same policy as
+/// `quantize_with_lock`). Deterministic; the caller remaps with
+/// `remap_to_palette`.
+pub fn build_source_palette(
+    src: &Bitmap,
+    fg: &Mask,
+    features: Option<&FeatureMap>,
+    saliency_weight: f32,
+    max_colors: u32,
+) -> Vec<[u8; 3]> {
+    let mut feature_px: Vec<([u8; 3], f32)> = Vec::new();
+    let mut body_px: Vec<([u8; 3], f32)> = Vec::new();
+    collect_weighted_pixels(
+        src,
+        fg,
+        features,
+        saliency_weight,
+        &mut feature_px,
+        &mut body_px,
+    );
+    palette_from_weighted(&feature_px, &body_px, max_colors)
+}
+
+/// Accumulate weighted source pixels into feature/body buckets. Used by the
+/// single-sprite palette build and by the sheet-level shared build, which
+/// aggregates every cell into one pair of buckets (the same design as
+/// Aseprite's `create_palette_from_sprite`, which feeds all frames into a
+/// single histogram before quantizing once).
+pub fn collect_weighted_pixels(
+    src: &Bitmap,
+    fg: &Mask,
+    features: Option<&FeatureMap>,
+    saliency_weight: f32,
+    feature_px: &mut Vec<([u8; 3], f32)>,
+    body_px: &mut Vec<([u8; 3], f32)>,
+) {
+    let use_features = features.map(|f| !f.is_empty()).unwrap_or(false);
+    for y in 0..src.height {
+        for x in 0..src.width {
+            if !fg.get(x, y) {
+                continue;
+            }
+            let p = src.get(x, y);
+            let a = p[3] as f32 / 255.0;
+            if a <= 0.0 {
+                continue;
+            }
+            let (critical, saliency) = if use_features {
+                let f = features.unwrap();
+                (
+                    f.is_critical(x, y),
+                    1.0 + (saliency_weight - 1.0).max(0.0) * f.weight_at(x, y),
+                )
+            } else {
+                (false, 1.0)
+            };
+            let entry = ([p[0], p[1], p[2]], a * saliency);
+            if critical {
+                feature_px.push(entry);
+            } else {
+                body_px.push(entry);
+            }
+        }
+    }
+}
+
+/// Build a palette from pre-collected weighted pixels, giving feature pixels a
+/// dedicated budget share (same split policy as `quantize_with_lock`).
+pub fn palette_from_weighted(
+    feature_px: &[([u8; 3], f32)],
+    body_px: &[([u8; 3], f32)],
+    max_colors: u32,
+) -> Vec<[u8; 3]> {
+    if feature_px.is_empty() && body_px.is_empty() {
+        return Vec::new();
+    }
+    let budget = max_colors.max(1) as usize;
+
+    // Exact-color path (Aseprite's "high precision" histogram): when the
+    // distinct source colors already fit the budget, keep them verbatim with
+    // zero quantization loss — important when the source is already pixel art.
+    let mut distinct = std::collections::BTreeSet::new();
+    for (c, _) in feature_px.iter().chain(body_px.iter()) {
+        distinct.insert(*c);
+        if distinct.len() > budget {
+            break;
+        }
+    }
+    if distinct.len() <= budget {
+        return distinct.into_iter().collect();
+    }
+
+    let mut palette: Vec<[u8; 3]> = if feature_px.is_empty() {
+        median_cut_weighted(body_px, budget)
+    } else {
+        // Same split policy as `quantize_with_lock`: features get a guaranteed
+        // share so their hues survive regardless of area.
+        let feature_budget = (budget / 3).clamp(1, budget.saturating_sub(1).max(1));
+        let body_budget = budget.saturating_sub(feature_budget).max(1);
+        let mut p = median_cut_weighted(feature_px, feature_budget);
+        if !body_px.is_empty() {
+            p.extend(median_cut_weighted(body_px, body_budget));
+        }
+        p
+    };
+    palette.sort_unstable();
+    palette.dedup();
+    palette
+}
+
 /// Collect body-pixel colors, restricted to inside (`only_lock = true`) or
 /// outside (`false`) the `lock` mask.
 fn collect_pixels(
@@ -173,7 +289,7 @@ fn collect_pixels(
 }
 
 /// Map every masked body pixel to its nearest palette color in Oklab.
-fn remap_to_palette(body: &mut Bitmap, mask: &Mask, palette: &[[u8; 3]]) {
+pub fn remap_to_palette(body: &mut Bitmap, mask: &Mask, palette: &[[u8; 3]]) {
     if palette.is_empty() {
         return;
     }
@@ -207,9 +323,18 @@ fn remap_to_palette(body: &mut Bitmap, mask: &Mask, palette: &[[u8; 3]]) {
 /// instead of being kept apart by RGB-space distance. This is what collapses a
 /// smooth gradient into a few large flat regions (the "hand-drawn" look).
 fn median_cut(pixels: &[[u8; 3]], max_colors: usize) -> Vec<[u8; 3]> {
+    let weighted: Vec<([u8; 3], f32)> = pixels.iter().map(|p| (*p, 1.0)).collect();
+    median_cut_weighted(&weighted, max_colors)
+}
+
+/// Weighted median-cut (saliency-aware, PRD §14.3): each pixel carries a
+/// weight, boxes split at the *weighted* median and average by weight, so
+/// identity-critical pixels pull splits and representatives toward their hues
+/// even when their area is small.
+fn median_cut_weighted(pixels: &[([u8; 3], f32)], max_colors: usize) -> Vec<[u8; 3]> {
     // Work in Oklab for both the split decision and the representative colour.
-    let labs: Vec<Oklab> = pixels.iter().map(|p| rgb_to_oklab(*p)).collect();
-    let mut boxes: Vec<Vec<Oklab>> = vec![labs];
+    let labs: Vec<(Oklab, f32)> = pixels.iter().map(|(p, w)| (rgb_to_oklab(*p), *w)).collect();
+    let mut boxes: Vec<Vec<(Oklab, f32)>> = vec![labs];
     while boxes.len() < max_colors {
         // Pick the box with the largest Oklab channel range to split.
         let mut target = None;
@@ -227,8 +352,19 @@ fn median_cut(pixels: &[[u8; 3]], max_colors: usize) -> Vec<[u8; 3]> {
         let Some(i) = target else { break };
         let mut b = boxes.swap_remove(i);
         let (ch, _) = widest_channel(&b);
-        b.sort_unstable_by(|a, c| channel(*a, ch).partial_cmp(&channel(*c, ch)).unwrap());
-        let mid = b.len() / 2;
+        b.sort_unstable_by(|a, c| channel(a.0, ch).partial_cmp(&channel(c.0, ch)).unwrap());
+        // Weighted median: split where cumulative weight crosses half the total.
+        let total: f64 = b.iter().map(|(_, w)| *w as f64).sum();
+        let mut mid = b.len() / 2;
+        let mut acc = 0f64;
+        for (idx, (_, w)) in b.iter().enumerate() {
+            acc += *w as f64;
+            if acc * 2.0 >= total {
+                mid = idx + 1;
+                break;
+            }
+        }
+        let mid = mid.clamp(1, b.len() - 1); // keep both halves non-empty
         let hi = b.split_off(mid);
         boxes.push(b);
         boxes.push(hi);
@@ -236,7 +372,7 @@ fn median_cut(pixels: &[[u8; 3]], max_colors: usize) -> Vec<[u8; 3]> {
     boxes
         .iter()
         .filter(|b| !b.is_empty())
-        .map(average_oklab)
+        .map(|b| average_oklab(b))
         .collect()
 }
 
@@ -250,10 +386,10 @@ fn channel(c: Oklab, ch: usize) -> f32 {
 }
 
 /// Widest Oklab channel in a box: returns (channel_index, perceptual range).
-fn widest_channel(b: &[Oklab]) -> (usize, f32) {
+fn widest_channel(b: &[(Oklab, f32)]) -> (usize, f32) {
     let mut lo = [f32::MAX; 3];
     let mut hi = [f32::MIN; 3];
-    for p in b {
+    for (p, _) in b {
         for c in 0..3 {
             let v = channel(*p, c);
             lo[c] = lo[c].min(v);
@@ -271,19 +407,23 @@ fn widest_channel(b: &[Oklab]) -> (usize, f32) {
     (ch, range)
 }
 
-/// Average a box of Oklab colours and convert the representative back to sRGB.
-fn average_oklab(b: &Vec<Oklab>) -> [u8; 3] {
-    let n = b.len() as f32;
-    let (mut l, mut a, mut bb) = (0f32, 0f32, 0f32);
-    for p in b {
-        l += p.l;
-        a += p.a;
-        bb += p.b;
+/// Weighted average of a box of Oklab colours, converted back to sRGB.
+fn average_oklab(b: &[(Oklab, f32)]) -> [u8; 3] {
+    let (mut l, mut a, mut bb, mut wsum) = (0f64, 0f64, 0f64, 0f64);
+    for (p, w) in b {
+        let w = *w as f64;
+        l += p.l as f64 * w;
+        a += p.a as f64 * w;
+        bb += p.b as f64 * w;
+        wsum += w;
+    }
+    if wsum <= 0.0 {
+        wsum = b.len().max(1) as f64;
     }
     oklab_to_rgb(Oklab {
-        l: l / n,
-        a: a / n,
-        b: bb / n,
+        l: (l / wsum) as f32,
+        a: (a / wsum) as f32,
+        b: (bb / wsum) as f32,
     })
 }
 
@@ -304,6 +444,20 @@ pub fn distinct_colors(body: &Bitmap, mask: &Mask) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn palette_from_weighted_keeps_exact_colors_when_they_fit() {
+        // Aseprite-style exact-color path: distinct colors within budget are
+        // preserved verbatim (zero quantization loss).
+        let body_px: Vec<([u8; 3], f32)> = vec![
+            ([200, 40, 40], 1.0),
+            ([40, 200, 40], 1.0),
+            ([200, 40, 40], 1.0),
+            ([10, 20, 30], 0.5),
+        ];
+        let pal = palette_from_weighted(&[], &body_px, 8);
+        assert_eq!(pal, vec![[10, 20, 30], [40, 200, 40], [200, 40, 40]]);
+    }
 
     #[test]
     fn quantize_respects_color_budget() {
@@ -340,6 +494,72 @@ mod tests {
         }
         posterize_lightness(&mut body, &mask, 3);
         assert!(distinct_colors(&body, &mask) <= 3);
+    }
+
+    #[test]
+    fn weighted_median_cut_preserves_small_weighted_cluster() {
+        // 90% near-white pixels vs 10% dark pixels with 8x weight: with a
+        // 2-color budget the dark cluster must keep its own palette entry.
+        let mut pixels: Vec<([u8; 3], f32)> = Vec::new();
+        for _ in 0..90 {
+            pixels.push(([240, 236, 230], 1.0));
+        }
+        for _ in 0..10 {
+            pixels.push(([30, 25, 20], 8.0));
+        }
+        let palette = median_cut_weighted(&pixels, 2);
+        assert_eq!(palette.len(), 2);
+        assert!(palette.iter().any(|c| c[0] < 90));
+        assert!(palette.iter().any(|c| c[0] > 180));
+    }
+
+    #[test]
+    fn build_source_palette_reserves_feature_colors() {
+        // A large cream body with a small skin-tone feature patch: the skin
+        // hue must survive into the palette thanks to the feature budget.
+        let mut src = Bitmap::new(32, 32);
+        let mut fg = Mask::new(32, 32);
+        for y in 0..32 {
+            for x in 0..32 {
+                src.set(x, y, [235, 228, 214, 255]); // cream
+                fg.set(x, y, true);
+            }
+        }
+        for y in 4..8 {
+            for x in 4..8 {
+                src.set(x, y, [222, 170, 130, 255]); // skin
+            }
+        }
+        let features = FeatureMap {
+            width: 32,
+            height: 32,
+            regions: vec![pixel_formats::FeatureRegion {
+                kind: pixel_formats::FeatureKind::Face,
+                bbox: (4, 4, 8, 8),
+                confidence: 0.9,
+            }],
+        };
+        let palette = build_source_palette(&src, &fg, Some(&features), 2.0, 4);
+        // A warm skin-like entry (red clearly above blue) must be present.
+        assert!(palette
+            .iter()
+            .any(|c| c[0] as i32 - c[2] as i32 > 40 && c[0] > 180));
+    }
+
+    #[test]
+    fn build_source_palette_is_deterministic() {
+        let mut src = Bitmap::new(16, 16);
+        let mut fg = Mask::new(16, 16);
+        for y in 0..16 {
+            for x in 0..16 {
+                src.set(x, y, [(x * 16) as u8, (y * 16) as u8, 128, 255]);
+                fg.set(x, y, true);
+            }
+        }
+        let a = build_source_palette(&src, &fg, None, 1.0, 6);
+        let b = build_source_palette(&src, &fg, None, 1.0, 6);
+        assert_eq!(a, b);
+        assert!(!a.is_empty() && a.len() <= 6);
     }
 
     #[test]

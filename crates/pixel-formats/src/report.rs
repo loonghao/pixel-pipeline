@@ -43,6 +43,10 @@ pub struct Artifacts {
     pub preview: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub report: Option<String>,
+    /// GIMP/Aseprite `.gpl` palette sidecar (`--emit-palette`). Sheet mode
+    /// writes one file covering every cell.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub palette: Option<String>,
 }
 
 /// Full conversion / validation report.

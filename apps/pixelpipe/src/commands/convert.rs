@@ -10,9 +10,12 @@ use crate::util::{
 use anyhow::{anyhow, Context, Result};
 use clap::Args as ClapArgs;
 use pixel_core::bitmap::{Bitmap, DEFAULT_MAX_PIXELS};
-use pixel_core::convert::{convert, convert_bitmap, ConvertOptions, ConvertOutput};
+use pixel_core::convert::{
+    build_sheet_palette, convert, convert_bitmap, ConvertOptions, ConvertOutput,
+};
 use pixel_core::sheet::{detect_grid, slice, SheetSpec};
 use pixel_formats::{parse_grid, parse_size, Artifacts, Canvas, Profile, Report, Status};
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 #[derive(ClapArgs)]
@@ -59,6 +62,10 @@ pub struct Args {
     /// and preserve them during reconstruction + quantization (PRD §7.5).
     #[arg(long)]
     pub detect_features: bool,
+    /// Also write the final palette as a GIMP/Aseprite `.gpl` sidecar
+    /// (`<stem>.gpl`). Sheet mode writes one palette covering every cell.
+    #[arg(long)]
+    pub emit_palette: bool,
 }
 
 /// Parameters for a single conversion, shared by `convert` and `batch`.
@@ -74,6 +81,8 @@ pub struct ConvertParams {
     pub write_sidecars: bool,
     /// Detect identity-critical features (face/eyes) and preserve them.
     pub detect_features: bool,
+    /// Write a `.gpl` palette sidecar next to the output.
+    pub emit_palette: bool,
 }
 
 /// Apply inline overrides onto a resolved profile and re-validate.
@@ -104,8 +113,16 @@ pub fn run_conversion(params: &ConvertParams) -> Result<Report> {
     let opts = ConvertOptions {
         max_pixels: params.max_pixels,
         detect_features: params.detect_features,
+        shared_palette: None,
     };
     let out = convert(&params.input, &profile, &opts)?;
+    let palette_path = if params.emit_palette {
+        let mut colors = BTreeSet::new();
+        collect_final_colors(&out, &mut colors);
+        Some(write_palette_gpl(&colors, &profile.name, &params.output)?)
+    } else {
+        None
+    };
     finish_conversion(
         &out,
         &profile,
@@ -114,7 +131,50 @@ pub fn run_conversion(params: &ConvertParams) -> Result<Report> {
         &params.input,
         &params.output,
         params.write_sidecars,
+        palette_path.as_deref(),
     )
+}
+
+/// Accumulate the distinct opaque colors of a final PNG (body + outline).
+fn collect_final_colors(out: &ConvertOutput, colors: &mut BTreeSet<[u8; 3]>) {
+    let bmp = &out.final_png;
+    for y in 0..bmp.height {
+        for x in 0..bmp.width {
+            let px = bmp.get(x, y);
+            if px[3] > 0 {
+                colors.insert([px[0], px[1], px[2]]);
+            }
+        }
+    }
+}
+
+/// Write the palette as a GIMP `.gpl` file (loadable by Aseprite) next to the
+/// output (`<stem>.gpl`), returning its path. Colors are already sorted by the
+/// BTreeSet, so the file is deterministic.
+fn write_palette_gpl(
+    colors: &BTreeSet<[u8; 3]>,
+    profile_name: &str,
+    output: &Path,
+) -> Result<PathBuf> {
+    let dir = output.parent().unwrap_or_else(|| Path::new("."));
+    let stem = output
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "asset".to_string());
+    let path = dir.join(format!("{stem}.gpl"));
+
+    let mut text = String::from("GIMP Palette\n");
+    text.push_str(&format!("Name: pixelpipe {profile_name} {stem}\n"));
+    text.push_str("Columns: 8\n#\n");
+    for c in colors {
+        text.push_str(&format!(
+            "{:3} {:3} {:3}\t#{:02x}{:02x}{:02x}\n",
+            c[0], c[1], c[2], c[0], c[1], c[2]
+        ));
+    }
+    write_atomic(&path, text.as_bytes())
+        .with_context(|| format!("writing palette {}", path.display()))?;
+    Ok(path)
 }
 
 /// Shared tail of a conversion: QA gate, artifact writing and report assembly.
@@ -128,6 +188,7 @@ fn finish_conversion(
     input: &Path,
     output: &Path,
     write_sidecars: bool,
+    palette_path: Option<&Path>,
 ) -> Result<Report> {
     let metrics = metrics_from_output(out, profile);
     let qa_input = pixel_qa::QaInput {
@@ -138,7 +199,10 @@ fn finish_conversion(
     let (status, reasons) = pixel_qa::evaluate(&qa_input);
 
     let paths = artifact_paths(output);
-    let artifacts = write_artifacts(out, &paths, write_sidecars)?;
+    let mut artifacts = write_artifacts(out, &paths, write_sidecars)?;
+    if let Some(p) = palette_path {
+        artifacts.palette = Some(p.display().to_string());
+    }
 
     let report = build_report(
         id,
@@ -185,28 +249,57 @@ pub fn run_sheet_conversion(params: &ConvertParams, spec: SheetSpec) -> Result<V
         ));
     }
 
-    let opts = ConvertOptions {
+    let mut opts = ConvertOptions {
         max_pixels: params.max_pixels,
         detect_features: params.detect_features,
+        shared_palette: None,
     };
-    let mut reports = Vec::with_capacity(cells.len());
+    // Sheet-shared palette (Aseprite's "New Palette from Sprite"): build one
+    // palette from every cell so animation frames never flicker between
+    // frame-local palettes.
+    if profile.palette.sheet_shared {
+        let bitmaps: Vec<&pixel_core::bitmap::Bitmap> = cells.iter().map(|c| &c.bitmap).collect();
+        let palette = build_sheet_palette(&bitmaps, &profile, &opts);
+        if !palette.is_empty() {
+            opts.shared_palette = Some(palette);
+        }
+    }
+    // Convert every cell first so the optional `.gpl` sidecar can cover the
+    // color union of all cells before the per-cell reports are finalized.
+    let mut outputs: Vec<(u32, u32, ConvertOutput)> = Vec::with_capacity(cells.len());
     for cell in cells {
-        let cell_out = cell_output_path(&params.output, cell.row, cell.col);
         let input_sha256 =
             crate::util::sha256_str(&format!("{sheet_sha}#r{}c{}", cell.row, cell.col));
         let out = convert_bitmap(cell.bitmap, input_sha256, &profile, &opts)?;
+        outputs.push((cell.row, cell.col, out));
+    }
+
+    let palette_path = if params.emit_palette {
+        let mut colors = BTreeSet::new();
+        for (_, _, out) in &outputs {
+            collect_final_colors(out, &mut colors);
+        }
+        Some(write_palette_gpl(&colors, &profile.name, &params.output)?)
+    } else {
+        None
+    };
+
+    let mut reports = Vec::with_capacity(outputs.len());
+    for (row, col, out) in &outputs {
+        let cell_out = cell_output_path(&params.output, *row, *col);
         let id = params
             .id
             .as_ref()
-            .map(|base| format!("{base}_r{}c{}", cell.row, cell.col));
+            .map(|base| format!("{base}_r{row}c{col}"));
         let report = finish_conversion(
-            &out,
+            out,
             &profile,
             profile_sha256.clone(),
             id,
             &params.input,
             &cell_out,
             params.write_sidecars,
+            palette_path.as_deref(),
         )?;
         reports.push(report);
     }
@@ -291,6 +384,7 @@ pub fn run(args: Args) -> Result<i32> {
         max_pixels: args.max_pixels,
         write_sidecars: !args.no_sidecars,
         detect_features: args.detect_features,
+        emit_palette: args.emit_palette,
     };
 
     // Sprite-sheet mode: one JSONL report line per cell, exit code = worst

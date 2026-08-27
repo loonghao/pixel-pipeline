@@ -15,12 +15,13 @@ pub mod inspect;
 pub mod internal_outline;
 pub mod mask;
 pub mod oklab;
+pub mod optimize;
 pub mod outline;
 pub mod palette;
 pub mod sheet;
 
 pub use bitmap::{Bitmap, Mask, Rgba};
-pub use convert::{convert, convert_bitmap, ConvertOptions, ConvertOutput};
+pub use convert::{build_sheet_palette, convert, convert_bitmap, ConvertOptions, ConvertOutput};
 pub use error::CoreError;
 pub use inspect::{inspect, InspectResult};
 pub use sheet::{detect_grid, slice, Cell, SheetSpec};
