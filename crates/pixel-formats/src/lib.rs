@@ -19,8 +19,8 @@ pub use feature::{FeatureKind, FeatureMap, FeatureRegion};
 pub use manifest::{parse_grid, parse_size, BatchTask};
 pub use profile::{
     AlphaConfig, Anchor, BackgroundMode, CleanupConfig, ColorSpace, CornerRule, DetailConfigToml,
-    Dithering, FeatureConfigToml, Fit, OutlineConfig, PaletteConfig, Profile, Target,
-    PROFILE_SCHEMA_VERSION,
+    Dithering, FeatureConfigToml, Fit, OptimizeConfigToml, OutlineConfig, PaletteConfig, Profile,
+    SamplingConfig, SamplingMode, Target, PROFILE_SCHEMA_VERSION,
 };
 pub use report::{Artifacts, Canvas, QaMetrics, Report, REPORT_SCHEMA_VERSION};
 pub use status::{Reason, ReasonCode, Status};

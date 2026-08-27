@@ -20,6 +20,15 @@ be consumed by agents, CI, and tooling — not just humans.
   boundaries, never traced from source RGB.
 - **Oklab palettes** — median-cut quantization in Oklab with a hard color
   budget and optional lightness posterization into flat cel-shading bands.
+- **Pixel-art convergence** — an optional post-quantization pass (Oklab Lloyd
+  palette refinement, orphan-pixel absorption, single-pixel jaggy cleanup).
+  Deterministic, and the palette can only shrink — never grow.
+- **Detail preservation** — a contrast-aware O(n) sliding-window pass expands
+  small high-contrast features (eyes, hair strands) before downsampling so they
+  survive at low resolution.
+- **Shared sheet palettes & export** — sprite-sheet mode can build one palette
+  across every frame (so animations never flicker); `--emit-palette` writes a
+  GIMP/Aseprite `.gpl` sidecar.
 - **A real quality gate** — hard rules produce stable reason codes; ambiguous
   segmentation can never silently `pass` (it is forced to `review`).
 - **Agent-friendly CLI** — JSON on stdout, logs on stderr, status exit codes,
@@ -51,6 +60,9 @@ pixelpipe convert sheet.png -o out/idle.png --profile character-48 --grid 4x4
 # 2c. Preserve identity-critical features (face/eyes) during reconstruction
 pixelpipe convert hero.png -o out/hero.png --profile character-48 --detect-features
 
+# 2d. Also emit the final palette as a GIMP/Aseprite .gpl sidecar
+pixelpipe convert hero.png -o out/hero.png --profile character-48 --emit-palette
+
 # 3. Validate an existing sprite against a profile's hard rules
 pixelpipe validate out/hero.png --profile character-48 \
   --body-mask out/hero.body-mask.png
@@ -78,11 +90,25 @@ Profiles are versioned TOML files describing the target grid, alpha handling,
 palette budget, outline, and cleanup rules. Built-in profiles ship in the
 binary; point `--profile` at a file path to use your own.
 
-- `character-32` — 32×32, 10 colors, 3-level posterize, internal outlines
-- `character-48` — 48×48, 12 colors, 4-level posterize, internal outlines
-- `character-64` — 64×64, 16 colors, 4-level posterize, internal outlines
+- `character-32` — 32×32, 10 colors
+- `character-48` — 48×48, 12 colors
+- `character-64` — 64×64, 16 colors
 
-See [`profiles/`](profiles/) for the full schema.
+The shipped character profiles use the *quantize-then-snap* order: the palette
+is built at source resolution (where small identity regions still win slots),
+each target cell picks its dominant palette color, and the convergence and
+detail passes run. Posterize and internal outlines are off for this order
+(exact palette boundaries are already crisp); the external outline is
+unaffected. See [`profiles/`](profiles/) for the full schema.
+
+## Integrations
+
+- **Aseprite** — [`integrations/aseprite/pixelpipe`](integrations/aseprite/pixelpipe)
+  adds a *File → PixelPipe: Convert to True-Pixel…* command that lays every
+  frame onto one sheet, shells out to `pixelpipe convert --emit-palette`, and
+  reimports the result as a new animation with the emitted palette applied. Zip
+  the folder as `pixelpipe.aseprite-extension` and install it via
+  *Edit → Preferences → Extensions*.
 
 ## Status model & exit codes
 

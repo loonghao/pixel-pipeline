@@ -1,0 +1,11 @@
+{
+  "name": "pixelpipe",
+  "displayName": "PixelPipe True-Pixel Converter",
+  "description": "Convert the active sprite into a QA-gated true-pixel asset via the pixelpipe CLI, then reimport the animation together with its shared palette.",
+  "version": "0.1.0",
+  "author": { "name": "pixel-pipeline" },
+  "license": "MIT OR Apache-2.0",
+  "contributes": {
+    "scripts": [{ "path": "./plugin.lua" }]
+  }
+}
