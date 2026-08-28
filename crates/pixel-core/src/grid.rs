@@ -105,6 +105,17 @@ pub fn reconstruct(
                     edge_map.as_deref().unwrap(),
                     profile.sampling.edge_sensitivity,
                 ),
+                SamplingMode::TwoStage => sample_region_two_stage(
+                    src,
+                    fg,
+                    rx0,
+                    rx1,
+                    ry0,
+                    ry1,
+                    features,
+                    profile.features.saliency_weight,
+                    profile.sampling.centroids,
+                ),
             };
             if cov >= profile.alpha.coverage_threshold {
                 cell.set(tx, ty, px);
@@ -554,6 +565,126 @@ fn sample_region_edge(
     ([rgb[0], rgb[1], rgb[2], 255], coverage)
 }
 
+/// Two-stage sampling: decouple structure from color (PRD §7.5).
+///
+/// Stage 1 (structure): cluster the cell's foreground pixels into up to
+/// `centroids` Oklab clusters with the shared deterministic weighted k-means,
+/// then pick the winning cluster by a *center-weighted* vote — pixels near the
+/// cell center count more, so a cell centered on a thin outline keeps that
+/// outline even when a flat background covers more area. Stage 2 (color): set
+/// the cell color to the alpha-weighted linear-RGB mean of the *original*
+/// source pixels in the winning cluster, so the color stays accurate and
+/// denoised and rare accents survive instead of collapsing to a cluster
+/// center. Fully deterministic; `centroids` reuses the `k-centroid` count.
+#[allow(clippy::too_many_arguments)]
+fn sample_region_two_stage(
+    src: &Bitmap,
+    fg: &Mask,
+    x0: u32,
+    x1: u32,
+    y0: u32,
+    y1: u32,
+    features: Option<&FeatureMap>,
+    saliency_weight: f32,
+    centroids: u32,
+) -> ([u8; 4], f32) {
+    let use_features = features.map(|f| !f.is_empty()).unwrap_or(false) && saliency_weight > 1.0;
+    let mut pixels: Vec<(Oklab, f32)> = Vec::new();
+    // Parallel per-pixel data: center-vote weight and linear-RGB for coloring.
+    let mut center_w: Vec<f64> = Vec::new();
+    let mut lin: Vec<(f64, f64, f64)> = Vec::new();
+    let mut fg_count = 0u32;
+    let mut total = 0u32;
+
+    // Cell center and half-extents for the separable tent (Bartlett) window.
+    let cx = (x0 as f64 + (x1 - 1) as f64) * 0.5;
+    let cy = (y0 as f64 + (y1 - 1) as f64) * 0.5;
+    let hx = ((x1 - x0) as f64 * 0.5).max(1.0);
+    let hy = ((y1 - y0) as f64 * 0.5).max(1.0);
+
+    for y in y0..y1 {
+        for x in x0..x1 {
+            total += 1;
+            if !fg.get(x, y) {
+                continue;
+            }
+            fg_count += 1;
+            let p = src.get(x, y);
+            let a = p[3] as f32 / 255.0;
+            let saliency = if use_features {
+                let w = features.unwrap().weight_at(x, y);
+                1.0 + (saliency_weight - 1.0) * w
+            } else {
+                1.0
+            };
+            let weight = a * saliency;
+            if weight <= 0.0 {
+                continue;
+            }
+            // Separable tent window in [0.15, 1]: center pixels dominate the
+            // structure vote, but edge pixels keep a small say so a single-row
+            // or single-column cell still produces a decision.
+            let wx = 1.0 - (x as f64 - cx).abs() / hx;
+            let wy = 1.0 - (y as f64 - cy).abs() / hy;
+            let cw = wx.min(wy).clamp(0.15, 1.0);
+            pixels.push((rgb_to_oklab([p[0], p[1], p[2]]), weight));
+            center_w.push(cw);
+            lin.push((
+                srgb_to_linear(p[0]) as f64,
+                srgb_to_linear(p[1]) as f64,
+                srgb_to_linear(p[2]) as f64,
+            ));
+        }
+    }
+    let coverage = if total == 0 {
+        0.0
+    } else {
+        fg_count as f32 / total as f32
+    };
+    if pixels.is_empty() {
+        return ([0, 0, 0, 0], coverage);
+    }
+
+    let k = (centroids.max(1) as usize).min(pixels.len());
+    let (_centers, assign) = kmeans_clusters(&pixels, k);
+
+    // Stage 1: winning cluster by center-weighted vote (× sampling weight).
+    // Ties break toward the lower cluster index.
+    let mut vote = vec![0f64; k];
+    for (i, (_, w)) in pixels.iter().enumerate() {
+        vote[assign[i]] += *w as f64 * center_w[i];
+    }
+    let mut best = 0usize;
+    for (c, &v) in vote.iter().enumerate() {
+        if v > vote[best] {
+            best = c;
+        }
+    }
+
+    // Stage 2: color = alpha-weighted linear-RGB mean of the ORIGINAL pixels in
+    // the winning cluster (accurate, denoised; rare accents survive).
+    let (mut lr, mut lg, mut lb, mut wsum) = (0f64, 0f64, 0f64, 0f64);
+    for (i, (_, w)) in pixels.iter().enumerate() {
+        if assign[i] != best {
+            continue;
+        }
+        let wt = *w as f64;
+        lr += lin[i].0 * wt;
+        lg += lin[i].1 * wt;
+        lb += lin[i].2 * wt;
+        wsum += wt;
+    }
+    if wsum <= 0.0 {
+        return ([0, 0, 0, 0], coverage);
+    }
+    let rgb = [
+        linear_to_srgb((lr / wsum) as f32),
+        linear_to_srgb((lg / wsum) as f32),
+        linear_to_srgb((lb / wsum) as f32),
+    ];
+    ([rgb[0], rgb[1], rgb[2], 255], coverage)
+}
+
 /// Tight foreground bounding box `(x0, y0, x1, y1)` (exclusive upper bound).
 pub fn foreground_bbox(fg: &Mask) -> Option<(u32, u32, u32, u32)> {
     let (mut x0, mut y0, mut x1, mut y1) = (u32::MAX, u32::MAX, 0u32, 0u32);
@@ -745,6 +876,78 @@ mod tests {
         let edges = edge_magnitude_map(&src);
         let a = sample_region_edge(&src, &fg, 0, 8, 0, 8, None, 1.0, &edges, 3.0);
         let b = sample_region_edge(&src, &fg, 0, 8, 0, 8, None, 1.0, &edges, 3.0);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn two_stage_is_crisp_and_accurate() {
+        // 6 red / 4 blue in one row. Area averaging blends to purple; two-stage
+        // votes the centered-majority red cluster and colors the cell from the
+        // mean of the ORIGINAL red pixels, so it stays exactly red.
+        let mut src = Bitmap::new(10, 1);
+        let mut fg = Mask::new(10, 1);
+        for x in 0..10 {
+            let c = if x < 6 {
+                [200, 40, 40, 255]
+            } else {
+                [40, 40, 200, 255]
+            };
+            src.set(x, 0, c);
+            fg.set(x, 0, true);
+        }
+        let (two, cov) = sample_region_two_stage(&src, &fg, 0, 10, 0, 1, None, 1.0, 2);
+        let (area, _) = sample_region(&src, &fg, 0, 10, 0, 1, None, 1.0);
+        assert_eq!(cov, 1.0);
+        // Crisp + accurate: the winning red cluster's mean is the exact red.
+        assert!(
+            (two[0] as i32 - 200).abs() <= 3 && two[2] <= 45,
+            "expected crisp red ~[200,40,40], got {two:?}"
+        );
+        // Area sampling bleeds blue into the result; two-stage does not.
+        assert!(
+            area[2] > two[2] + 30,
+            "area should blend blue in, area={area:?} two={two:?}"
+        );
+    }
+
+    #[test]
+    fn two_stage_center_weight_favors_centered_detail() {
+        // A centered dark pair (2 px) framed by a lighter pair on each side
+        // (4 px). Plain dominant-cluster (k-centroid) keeps the larger light
+        // area; two-stage's center-weighted vote keeps the centered dark
+        // detail — the mechanism that lands boundaries and outlines crisp.
+        let mut src = Bitmap::new(6, 1);
+        let mut fg = Mask::new(6, 1);
+        for x in 0..6 {
+            let c = if x == 2 || x == 3 {
+                [20, 20, 20, 255]
+            } else {
+                [235, 235, 235, 255]
+            };
+            src.set(x, 0, c);
+            fg.set(x, 0, true);
+        }
+        let (two, _) = sample_region_two_stage(&src, &fg, 0, 6, 0, 1, None, 1.0, 2);
+        let (dom, _) = sample_region_kcentroid(&src, &fg, 0, 6, 0, 1, None, 1.0, 2);
+        assert!(two[0] < 60, "center-weighted vote keeps dark, got {two:?}");
+        assert!(
+            dom[0] > 180,
+            "dominant keeps the light majority, got {dom:?}"
+        );
+    }
+
+    #[test]
+    fn two_stage_is_deterministic() {
+        let mut src = Bitmap::new(8, 8);
+        let mut fg = Mask::new(8, 8);
+        for y in 0..8 {
+            for x in 0..8 {
+                src.set(x, y, [(x * 30) as u8, (y * 25) as u8, 128, 255]);
+                fg.set(x, y, true);
+            }
+        }
+        let a = sample_region_two_stage(&src, &fg, 0, 8, 0, 8, None, 1.0, 2);
+        let b = sample_region_two_stage(&src, &fg, 0, 8, 0, 8, None, 1.0, 2);
         assert_eq!(a, b);
     }
 

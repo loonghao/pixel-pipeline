@@ -134,6 +134,17 @@ pub enum SamplingMode {
     /// downsampling instead of being outvoted by a flat background. Fully
     /// deterministic (fixed gradient kernel, fixed cluster init).
     Edge,
+    /// Two-stage sampling that decouples *structure* from *color*. A per-cell
+    /// Oklab k-means (`sampling.centroids` clusters) produces flat labels; a
+    /// *center-weighted* vote among those labels picks the cell's winning
+    /// cluster, so region boundaries and outlines land crisp instead of smeared
+    /// (a cell centered on a thin outline keeps the outline even if the flat
+    /// background has more area). The cell is then colored from the
+    /// alpha-weighted linear-RGB mean of the *original, un-quantized* source
+    /// pixels in that winning cluster, so colors stay accurate and denoised and
+    /// rare accents survive rather than being clamped to a cluster center.
+    /// Fully deterministic (fixed cluster init, fixed center window).
+    TwoStage,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
