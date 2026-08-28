@@ -5,7 +5,7 @@
 
 use crate::bitmap::{Bitmap, Mask};
 use crate::oklab::{oklab_distance_sq, oklab_to_rgb, rgb_to_oklab, Oklab};
-use pixel_formats::FeatureMap;
+use pixel_formats::{Dithering, FeatureMap};
 
 /// Snap each body pixel's Oklab lightness to one of `levels` evenly spaced
 /// bands, preserving chroma (a, b). This posterizes smooth shading into flat
@@ -316,6 +316,89 @@ pub fn remap_to_palette(body: &mut Bitmap, mask: &Mask, palette: &[[u8; 3]]) {
     }
 }
 
+/// 4×4 Bayer ordered-dither threshold matrix (values `0..16`).
+#[rustfmt::skip]
+const BAYER4: [u16; 16] = [
+     0,  8,  2, 10,
+    12,  4, 14,  6,
+     3, 11,  1,  9,
+    15,  7, 13,  5,
+];
+
+/// 8×8 Bayer ordered-dither threshold matrix (values `0..64`).
+#[rustfmt::skip]
+const BAYER8: [u16; 64] = [
+     0, 32,  8, 40,  2, 34, 10, 42,
+    48, 16, 56, 24, 50, 18, 58, 26,
+    12, 44,  4, 36, 14, 46,  6, 38,
+    60, 28, 52, 20, 62, 30, 54, 22,
+     3, 35, 11, 43,  1, 33,  9, 41,
+    51, 19, 59, 27, 49, 17, 57, 25,
+    15, 47,  7, 39, 13, 45,  5, 37,
+    63, 31, 55, 23, 61, 29, 53, 21,
+];
+
+/// Map every masked body pixel to its nearest palette color in Oklab, applying
+/// deterministic ordered (Bayer) dithering to lightness first.
+///
+/// Before the nearest-palette search each pixel's Oklab lightness is nudged by
+/// a threshold read from a Bayer matrix indexed by the pixel's canvas
+/// coordinates (`±strength/2` at most). Because the threshold depends only on
+/// `(x, y)`, output stays byte-identical across runs. On a smooth gradient this
+/// pushes neighbouring pixels to alternating palette entries, so a shading ramp
+/// reads as a stable stipple instead of a few hard bands — the classic
+/// low-palette dithered look. `Dithering::None` (or non-positive `strength`)
+/// falls back to the plain nearest-color remap.
+pub fn remap_to_palette_dithered(
+    body: &mut Bitmap,
+    mask: &Mask,
+    palette: &[[u8; 3]],
+    dithering: Dithering,
+    strength: f32,
+) {
+    if palette.is_empty() {
+        return;
+    }
+    let (n, matrix): (u32, &[u16]) = match dithering {
+        Dithering::None => {
+            remap_to_palette(body, mask, palette);
+            return;
+        }
+        Dithering::Bayer4x4 => (4, &BAYER4),
+        Dithering::Bayer8x8 => (8, &BAYER8),
+    };
+    if strength <= 0.0 {
+        remap_to_palette(body, mask, palette);
+        return;
+    }
+    let pal_lab: Vec<_> = palette.iter().map(|c| rgb_to_oklab(*c)).collect();
+    let denom = (n * n) as f32;
+    for y in 0..body.height {
+        for x in 0..body.width {
+            if !mask.get(x, y) {
+                continue;
+            }
+            let p = body.get(x, y);
+            let mut lab = rgb_to_oklab([p[0], p[1], p[2]]);
+            let v = matrix[((y % n) * n + (x % n)) as usize] as f32;
+            // Centered threshold in [-0.5, 0.5) scaled by strength.
+            let t = (v + 0.5) / denom - 0.5;
+            lab.l += t * strength;
+            let mut best = 0usize;
+            let mut best_d = f32::MAX;
+            for (i, pl) in pal_lab.iter().enumerate() {
+                let d = oklab_distance_sq(lab, *pl);
+                if d < best_d {
+                    best_d = d;
+                    best = i;
+                }
+            }
+            let c = palette[best];
+            body.set(x, y, [c[0], c[1], c[2], 255]);
+        }
+    }
+}
+
 /// Median-cut quantization in Oklab space (deterministic, FR-PALETTE-002).
 ///
 /// We split boxes along the perceptually widest Oklab channel and average in
@@ -560,6 +643,67 @@ mod tests {
         let b = build_source_palette(&src, &fg, None, 1.0, 6);
         assert_eq!(a, b);
         assert!(!a.is_empty() && a.len() <= 6);
+    }
+
+    #[test]
+    fn dithering_none_matches_plain_remap() {
+        let mut a = Bitmap::new(8, 8);
+        let mut mask = Mask::new(8, 8);
+        for y in 0..8 {
+            for x in 0..8 {
+                a.set(x, y, [(x * 30) as u8, 100, (y * 30) as u8, 255]);
+                mask.set(x, y, true);
+            }
+        }
+        let mut b = a.clone();
+        let palette = vec![[10, 10, 10], [240, 240, 240], [200, 40, 40]];
+        remap_to_palette(&mut a, &mask, &palette);
+        remap_to_palette_dithered(&mut b, &mask, &palette, Dithering::None, 0.06);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn bayer_dithering_mixes_palette_on_flat_midtone() {
+        // A constant mid-gray with a black/white palette collapses to one flat
+        // color without dithering; Bayer thresholds split it into a stipple of
+        // both palette colors. Output must stay within the palette.
+        let mut plain = Bitmap::new(4, 4);
+        let mut mask = Mask::new(4, 4);
+        for y in 0..4 {
+            for x in 0..4 {
+                plain.set(x, y, [128, 128, 128, 255]);
+                mask.set(x, y, true);
+            }
+        }
+        let mut dithered = plain.clone();
+        let palette = vec![[0, 0, 0], [255, 255, 255]];
+        remap_to_palette(&mut plain, &mask, &palette);
+        remap_to_palette_dithered(&mut dithered, &mask, &palette, Dithering::Bayer4x4, 0.5);
+        assert_eq!(distinct_colors(&plain, &mask), 1);
+        assert_eq!(distinct_colors(&dithered, &mask), 2);
+        for y in 0..4 {
+            for x in 0..4 {
+                let p = dithered.get(x, y);
+                assert!(palette.contains(&[p[0], p[1], p[2]]));
+            }
+        }
+    }
+
+    #[test]
+    fn bayer_dithering_is_deterministic() {
+        let mut a = Bitmap::new(8, 8);
+        let mut mask = Mask::new(8, 8);
+        for y in 0..8 {
+            for x in 0..8 {
+                a.set(x, y, [120, 120, 120, 255]);
+                mask.set(x, y, true);
+            }
+        }
+        let mut b = a.clone();
+        let palette = vec![[0, 0, 0], [255, 255, 255]];
+        remap_to_palette_dithered(&mut a, &mask, &palette, Dithering::Bayer8x8, 0.4);
+        remap_to_palette_dithered(&mut b, &mask, &palette, Dithering::Bayer8x8, 0.4);
+        assert_eq!(a, b);
     }
 
     #[test]

@@ -154,6 +154,7 @@ mod tests {
                 max_colors: 8,
                 color_space: ColorSpace::Oklab,
                 dithering: Dithering::None,
+                dither_strength: 0.06,
                 posterize_levels: 0,
                 quantize_source: false,
                 sheet_shared: true,

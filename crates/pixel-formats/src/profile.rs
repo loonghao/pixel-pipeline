@@ -61,7 +61,15 @@ pub enum ColorSpace {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Dithering {
+    /// No dithering (flat bands; FR-PALETTE-003 default).
     None,
+    /// Ordered dithering with a 4×4 Bayer threshold matrix. Fully
+    /// deterministic (the threshold depends only on the pixel's canvas
+    /// coordinates), so byte-identical output is preserved.
+    Bayer4x4,
+    /// Ordered dithering with an 8×8 Bayer threshold matrix (finer pattern,
+    /// smoother apparent gradients than 4×4).
+    Bayer8x8,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -71,6 +79,13 @@ pub struct PaletteConfig {
     pub color_space: ColorSpace,
     #[serde(default = "default_dithering")]
     pub dithering: Dithering,
+    /// Threshold amplitude for ordered dithering, in Oklab lightness units.
+    /// The Bayer matrix perturbs each pixel's lightness by up to ±half this
+    /// value before the nearest-palette match, so larger values push more
+    /// borderline pixels across a band boundary (stronger stipple). Ignored
+    /// when `dithering = "none"`. `~0.06` is a subtle, print-like default.
+    #[serde(default = "default_dither_strength")]
+    pub dither_strength: f32,
     /// Number of flat lightness bands to snap body colors to before quantizing
     /// (cel-shading / posterization). `0` disables it and preserves the smooth
     /// area-averaged reconstruction. This is a stylization step layered on top
@@ -112,9 +127,16 @@ pub enum SamplingMode {
     /// source is already palette-quantized: each cell then picks its dominant
     /// palette color, exactly like a pixel artist filling a grid cell.
     Mode,
+    /// Edge-aware sampling: split each cell into two Oklab clusters (like
+    /// `k-centroid`) but pick the cluster whose pixels carry the most *edge
+    /// energy* (Sobel gradient magnitude), not the one with the largest area.
+    /// Thin high-contrast features — outlines, eyes, hair strands — survive
+    /// downsampling instead of being outvoted by a flat background. Fully
+    /// deterministic (fixed gradient kernel, fixed cluster init).
+    Edge,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct SamplingConfig {
     #[serde(default)]
     pub mode: SamplingMode,
@@ -122,10 +144,21 @@ pub struct SamplingConfig {
     /// more clusters reintroduce noise).
     #[serde(default = "default_centroids")]
     pub centroids: u32,
+    /// Edge-energy bias for `edge` sampling. Each pixel's cluster vote is
+    /// scaled by `1 + edge_sensitivity × normalized_gradient`, so higher
+    /// values let thin, high-contrast features win their cell over a larger
+    /// flat region. `0` makes `edge` behave like plain dominant-cluster
+    /// sampling. Ignored by other modes.
+    #[serde(default = "default_edge_sensitivity")]
+    pub edge_sensitivity: f32,
 }
 
 fn default_centroids() -> u32 {
     2
+}
+
+fn default_edge_sensitivity() -> f32 {
+    3.0
 }
 
 impl Default for SamplingConfig {
@@ -133,6 +166,7 @@ impl Default for SamplingConfig {
         Self {
             mode: SamplingMode::Area,
             centroids: 2,
+            edge_sensitivity: 3.0,
         }
     }
 }
@@ -212,6 +246,9 @@ fn default_color_space() -> ColorSpace {
 }
 fn default_dithering() -> Dithering {
     Dithering::None
+}
+fn default_dither_strength() -> f32 {
+    0.06
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -357,6 +394,16 @@ impl Profile {
         if self.sampling.centroids == 0 {
             return Err(FormatError::Validation(
                 "sampling.centroids must be > 0".into(),
+            ));
+        }
+        if self.sampling.edge_sensitivity < 0.0 || !self.sampling.edge_sensitivity.is_finite() {
+            return Err(FormatError::Validation(
+                "sampling.edge_sensitivity must be finite and >= 0".into(),
+            ));
+        }
+        if self.palette.dither_strength < 0.0 || !self.palette.dither_strength.is_finite() {
+            return Err(FormatError::Validation(
+                "palette.dither_strength must be finite and >= 0".into(),
             ));
         }
         let reserved = self.outline.width + self.transparent_margin;

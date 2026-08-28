@@ -12,10 +12,10 @@ use crate::mask::{
 use crate::outline::compile_outline;
 use crate::palette::{
     build_source_palette, collect_weighted_pixels, distinct_colors, palette_from_weighted,
-    posterize_lightness, quantize_with_lock, remap_to_palette,
+    posterize_lightness, quantize_with_lock, remap_to_palette, remap_to_palette_dithered,
 };
 use pixel_formats::color::parse_hex_color;
-use pixel_formats::{FeatureMap, Profile};
+use pixel_formats::{Dithering, FeatureMap, Profile};
 use std::path::Path;
 
 /// Options controlling a conversion run.
@@ -176,6 +176,25 @@ pub fn convert_bitmap(
         quantize_with_lock(&mut body, &body_mask, lock, color_budget)
     };
 
+    // Optional ordered dithering (opt-in): map the smooth pre-quantization
+    // colors onto the final palette with a deterministic Bayer threshold, so
+    // shading gradients become a stable stipple instead of a few flat bands.
+    // It reads the `reference` (pre-quant) colors — dithering already-snapped
+    // flat colors would be a no-op — and supersedes the convergence cleanup,
+    // which would otherwise treat the stipple as orphan/jaggy noise. Hence the
+    // optimize pass below is skipped whenever dithering is active.
+    let dithered = profile.palette.dithering != Dithering::None;
+    if dithered {
+        body = reference.clone();
+        remap_to_palette_dithered(
+            &mut body,
+            &body_mask,
+            &palette,
+            profile.palette.dithering,
+            profile.palette.dither_strength,
+        );
+    }
+
     // Optional pixel-art convergence pass (PRD §14.5): Lloyd palette
     // refinement + orphan absorption + jaggy cleanup. Deterministic, palette
     // can only shrink, feature pixels are never rewritten. Per-frame Lloyd
@@ -186,7 +205,9 @@ pub fn convert_bitmap(
     if shared.is_some() {
         opt_cfg.palette_iterations = 0;
     }
-    if opt_cfg.palette_iterations > 0 || opt_cfg.merge_orphans || opt_cfg.jaggy_cleanup {
+    if !dithered
+        && (opt_cfg.palette_iterations > 0 || opt_cfg.merge_orphans || opt_cfg.jaggy_cleanup)
+    {
         crate::optimize::run_optimize(
             &mut body,
             &reference,

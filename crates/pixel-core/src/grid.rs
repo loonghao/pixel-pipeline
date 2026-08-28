@@ -45,6 +45,12 @@ pub fn reconstruct(
     let fit_h = ((src_h as f64 * scale).round() as u32).clamp(1, bh);
 
     let use_features = features.map(|f| !f.is_empty()).unwrap_or(false);
+    // Edge-aware sampling needs a source-wide gradient field; compute it once.
+    let edge_map = if matches!(profile.sampling.mode, SamplingMode::Edge) {
+        Some(edge_magnitude_map(src))
+    } else {
+        None
+    };
     let mut cell = Bitmap::new(fit_w, fit_h);
     let mut cell_mask = Mask::new(fit_w, fit_h);
     let mut cell_feature = Mask::new(fit_w, fit_h);
@@ -86,6 +92,18 @@ pub fn reconstruct(
                     ry1,
                     features,
                     profile.features.saliency_weight,
+                ),
+                SamplingMode::Edge => sample_region_edge(
+                    src,
+                    fg,
+                    rx0,
+                    rx1,
+                    ry0,
+                    ry1,
+                    features,
+                    profile.features.saliency_weight,
+                    edge_map.as_deref().unwrap(),
+                    profile.sampling.edge_sensitivity,
                 ),
             };
             if cov >= profile.alpha.coverage_threshold {
@@ -258,59 +276,7 @@ fn sample_region_kcentroid(
     }
 
     let k = (centroids.max(1) as usize).min(pixels.len());
-    // Stable order by (L, a, b) so quantile initialization is deterministic.
-    let mut order: Vec<usize> = (0..pixels.len()).collect();
-    order.sort_by(|&i, &j| {
-        let (a, b) = (pixels[i].0, pixels[j].0);
-        (a.l, a.a, a.b)
-            .partial_cmp(&(b.l, b.a, b.b))
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-    let mut centers: Vec<Oklab> = (0..k)
-        .map(|j| {
-            let idx = if k == 1 {
-                order.len() / 2
-            } else {
-                j * (order.len() - 1) / (k - 1)
-            };
-            pixels[order[idx]].0
-        })
-        .collect();
-
-    let mut assign = vec![0usize; pixels.len()];
-    for _ in 0..8 {
-        // Assignment: nearest center, ties toward the lower index.
-        for (i, (lab, _)) in pixels.iter().enumerate() {
-            let mut best = 0usize;
-            let mut best_d = f32::MAX;
-            for (c, center) in centers.iter().enumerate() {
-                let d = crate::oklab::oklab_distance_sq(*lab, *center);
-                if d < best_d {
-                    best_d = d;
-                    best = c;
-                }
-            }
-            assign[i] = best;
-        }
-        // Update: weighted mean per cluster; empty clusters keep their center.
-        let mut sums = vec![(0f64, 0f64, 0f64, 0f64); k];
-        for (i, (lab, w)) in pixels.iter().enumerate() {
-            let s = &mut sums[assign[i]];
-            s.0 += lab.l as f64 * *w as f64;
-            s.1 += lab.a as f64 * *w as f64;
-            s.2 += lab.b as f64 * *w as f64;
-            s.3 += *w as f64;
-        }
-        for (c, s) in sums.iter().enumerate() {
-            if s.3 > 0.0 {
-                centers[c] = Oklab {
-                    l: (s.0 / s.3) as f32,
-                    a: (s.1 / s.3) as f32,
-                    b: (s.2 / s.3) as f32,
-                };
-            }
-        }
-    }
+    let (centers, assign) = kmeans_clusters(&pixels, k);
 
     // Dominant cluster by total weight; ties toward the lower index.
     let mut weights = vec![0f64; k];
@@ -386,6 +352,206 @@ fn sample_region_mode(
         Some((c, _)) => ([c[0], c[1], c[2], 255], coverage),
         None => ([0, 0, 0, 0], coverage),
     }
+}
+
+/// Deterministic weighted k-means over Oklab colors (shared by `k-centroid`
+/// and `edge` sampling). Centers initialize from lightness quantiles of a
+/// stably sorted pixel list, iterations are fixed at 8, and assignment ties
+/// break toward the lower cluster index. Returns the final centers and the
+/// per-pixel cluster assignment (parallel to `pixels`).
+fn kmeans_clusters(pixels: &[(Oklab, f32)], k: usize) -> (Vec<Oklab>, Vec<usize>) {
+    // Stable order by (L, a, b) so quantile initialization is deterministic.
+    let mut order: Vec<usize> = (0..pixels.len()).collect();
+    order.sort_by(|&i, &j| {
+        let (a, b) = (pixels[i].0, pixels[j].0);
+        (a.l, a.a, a.b)
+            .partial_cmp(&(b.l, b.a, b.b))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let mut centers: Vec<Oklab> = (0..k)
+        .map(|j| {
+            let idx = if k == 1 {
+                order.len() / 2
+            } else {
+                j * (order.len() - 1) / (k - 1)
+            };
+            pixels[order[idx]].0
+        })
+        .collect();
+
+    let mut assign = vec![0usize; pixels.len()];
+    for _ in 0..8 {
+        // Assignment: nearest center, ties toward the lower index.
+        for (i, (lab, _)) in pixels.iter().enumerate() {
+            let mut best = 0usize;
+            let mut best_d = f32::MAX;
+            for (c, center) in centers.iter().enumerate() {
+                let d = crate::oklab::oklab_distance_sq(*lab, *center);
+                if d < best_d {
+                    best_d = d;
+                    best = c;
+                }
+            }
+            assign[i] = best;
+        }
+        // Update: weighted mean per cluster; empty clusters keep their center.
+        let mut sums = vec![(0f64, 0f64, 0f64, 0f64); k];
+        for (i, (lab, w)) in pixels.iter().enumerate() {
+            let s = &mut sums[assign[i]];
+            s.0 += lab.l as f64 * *w as f64;
+            s.1 += lab.a as f64 * *w as f64;
+            s.2 += lab.b as f64 * *w as f64;
+            s.3 += *w as f64;
+        }
+        for (c, s) in sums.iter().enumerate() {
+            if s.3 > 0.0 {
+                centers[c] = Oklab {
+                    l: (s.0 / s.3) as f32,
+                    a: (s.1 / s.3) as f32,
+                    b: (s.2 / s.3) as f32,
+                };
+            }
+        }
+    }
+    (centers, assign)
+}
+
+/// Per-pixel edge magnitude of `src`, normalized to `[0, 1]` (row-major,
+/// `width * height`). A 3×3 Sobel operator runs over Oklab lightness (the
+/// perceptual luminance axis), with replicate padding at the borders. The map
+/// is normalized by its maximum so `edge_sensitivity` is scale-independent.
+fn edge_magnitude_map(src: &Bitmap) -> Vec<f32> {
+    let (w, h) = (src.width, src.height);
+    let n = (w * h) as usize;
+    let mut lum = vec![0f32; n];
+    for y in 0..h {
+        for x in 0..w {
+            let p = src.get(x, y);
+            lum[(y * w + x) as usize] = rgb_to_oklab([p[0], p[1], p[2]]).l;
+        }
+    }
+    let at = |x: i64, y: i64| -> f32 {
+        let xc = x.clamp(0, w as i64 - 1) as u32;
+        let yc = y.clamp(0, h as i64 - 1) as u32;
+        lum[(yc * w + xc) as usize]
+    };
+    let mut mag = vec![0f32; n];
+    let mut maxm = 0f32;
+    for y in 0..h as i64 {
+        for x in 0..w as i64 {
+            let gx = at(x - 1, y - 1) + 2.0 * at(x - 1, y) + at(x - 1, y + 1)
+                - at(x + 1, y - 1)
+                - 2.0 * at(x + 1, y)
+                - at(x + 1, y + 1);
+            let gy = at(x - 1, y - 1) + 2.0 * at(x, y - 1) + at(x + 1, y - 1)
+                - at(x - 1, y + 1)
+                - 2.0 * at(x, y + 1)
+                - at(x + 1, y + 1);
+            let m = (gx * gx + gy * gy).sqrt();
+            mag[(y as u32 * w + x as u32) as usize] = m;
+            if m > maxm {
+                maxm = m;
+            }
+        }
+    }
+    if maxm > 0.0 {
+        for m in mag.iter_mut() {
+            *m /= maxm;
+        }
+    }
+    mag
+}
+
+/// Edge-aware sampling of a source region + foreground coverage (PRD §7.5).
+///
+/// Splits the cell's foreground pixels into two Oklab clusters (deterministic
+/// weighted k-means) like `k-centroid`, then chooses the representative cluster
+/// based on the cell's local edge strength. In a flat cell (no edge) it returns
+/// the *dominant* cluster, exactly like `k-centroid`. As the cell's edge
+/// strength rises, selection is biased smoothly toward the *minority* cluster —
+/// the thin, high-contrast detail (an outline, eye, or hair strand) that a flat
+/// background would otherwise outvote. This keeps lines and small features from
+/// dissolving under downsampling while leaving smooth regions untouched.
+///
+/// `edge_map` is the source's normalized Sobel magnitude; `edge_sensitivity`
+/// controls how quickly a cell's edge flips selection toward the detail cluster
+/// (`0` reproduces plain dominant-cluster sampling).
+#[allow(clippy::too_many_arguments)]
+fn sample_region_edge(
+    src: &Bitmap,
+    fg: &Mask,
+    x0: u32,
+    x1: u32,
+    y0: u32,
+    y1: u32,
+    features: Option<&FeatureMap>,
+    saliency_weight: f32,
+    edge_map: &[f32],
+    edge_sensitivity: f32,
+) -> ([u8; 4], f32) {
+    let use_features = features.map(|f| !f.is_empty()).unwrap_or(false) && saliency_weight > 1.0;
+    let mut pixels: Vec<(Oklab, f32)> = Vec::new();
+    let mut cell_edge = 0f32;
+    let mut fg_count = 0u32;
+    let mut total = 0u32;
+    for y in y0..y1 {
+        for x in x0..x1 {
+            total += 1;
+            if !fg.get(x, y) {
+                continue;
+            }
+            fg_count += 1;
+            let p = src.get(x, y);
+            let a = p[3] as f32 / 255.0;
+            let saliency = if use_features {
+                let w = features.unwrap().weight_at(x, y);
+                1.0 + (saliency_weight - 1.0) * w
+            } else {
+                1.0
+            };
+            let weight = a * saliency;
+            if weight > 0.0 {
+                pixels.push((rgb_to_oklab([p[0], p[1], p[2]]), weight));
+                cell_edge = cell_edge.max(edge_map[(y * src.width + x) as usize]);
+            }
+        }
+    }
+    let coverage = if total == 0 {
+        0.0
+    } else {
+        fg_count as f32 / total as f32
+    };
+    if pixels.is_empty() {
+        return ([0, 0, 0, 0], coverage);
+    }
+
+    let k = 2usize.min(pixels.len());
+    let (centers, assign) = kmeans_clusters(&pixels, k);
+
+    // Per-cluster weight and the cell total.
+    let mut wsum = vec![0f64; k];
+    let mut total_w = 0f64;
+    for (i, (_, w)) in pixels.iter().enumerate() {
+        wsum[assign[i]] += *w as f64;
+        total_w += *w as f64;
+    }
+
+    // Edge influence in [0, 1]: 0 = flat (keep dominant), 1 = strong edge
+    // (prefer the minority detail). The selection metric interpolates between
+    // "largest cluster" and "smallest cluster" so the flip is smooth and
+    // deterministic; ties break toward the lower cluster index.
+    let influence = (cell_edge * edge_sensitivity).clamp(0.0, 1.0) as f64;
+    let mut best = 0usize;
+    let mut best_metric = f64::MIN;
+    for (c, &w) in wsum.iter().enumerate() {
+        let metric = w + influence * (total_w - 2.0 * w);
+        if metric > best_metric {
+            best_metric = metric;
+            best = c;
+        }
+    }
+    let rgb = oklab_to_rgb(centers[best]);
+    ([rgb[0], rgb[1], rgb[2], 255], coverage)
 }
 
 /// Tight foreground bounding box `(x0, y0, x1, y1)` (exclusive upper bound).
@@ -511,6 +677,75 @@ mod tests {
         fg.set(1, 0, true);
         let (px, _) = sample_region_mode(&src, &fg, 0, 2, 0, 1, None, 1.0);
         assert_eq!(px, [10, 10, 10, 255]);
+    }
+
+    #[test]
+    fn edge_sampling_preserves_thin_high_contrast_feature() {
+        // A light 4×4 cell crossed by a single dark column (4 of 16 pixels).
+        // Area/dominant sampling returns light; edge sampling keeps the dark
+        // detail because the cell has a strong edge and dark is the minority.
+        let mut src = Bitmap::new(4, 4);
+        let mut fg = Mask::new(4, 4);
+        for y in 0..4 {
+            for x in 0..4 {
+                let c = if x == 1 {
+                    [20, 20, 20, 255]
+                } else {
+                    [235, 235, 235, 255]
+                };
+                src.set(x, y, c);
+                fg.set(x, y, true);
+            }
+        }
+        let edges = edge_magnitude_map(&src);
+        let (edge_px, _) = sample_region_edge(&src, &fg, 0, 4, 0, 4, None, 1.0, &edges, 3.0);
+        let (dom_px, _) = sample_region_kcentroid(&src, &fg, 0, 4, 0, 4, None, 1.0, 2);
+        assert!(
+            edge_px[0] < 60,
+            "edge keeps the dark detail, got {edge_px:?}"
+        );
+        assert!(
+            dom_px[0] > 180,
+            "dominant keeps the light majority, got {dom_px:?}"
+        );
+    }
+
+    #[test]
+    fn edge_sensitivity_zero_matches_dominant_cluster() {
+        // With sensitivity 0 the edge influence vanishes, so the mode reduces
+        // to plain dominant-cluster (k-centroid) selection: light wins.
+        let mut src = Bitmap::new(4, 4);
+        let mut fg = Mask::new(4, 4);
+        for y in 0..4 {
+            for x in 0..4 {
+                let c = if x == 1 {
+                    [20, 20, 20, 255]
+                } else {
+                    [235, 235, 235, 255]
+                };
+                src.set(x, y, c);
+                fg.set(x, y, true);
+            }
+        }
+        let edges = edge_magnitude_map(&src);
+        let (px, _) = sample_region_edge(&src, &fg, 0, 4, 0, 4, None, 1.0, &edges, 0.0);
+        assert!(px[0] > 180, "sensitivity 0 keeps the majority, got {px:?}");
+    }
+
+    #[test]
+    fn edge_sampling_is_deterministic() {
+        let mut src = Bitmap::new(8, 8);
+        let mut fg = Mask::new(8, 8);
+        for y in 0..8 {
+            for x in 0..8 {
+                src.set(x, y, [(x * 30) as u8, (y * 25) as u8, 128, 255]);
+                fg.set(x, y, true);
+            }
+        }
+        let edges = edge_magnitude_map(&src);
+        let a = sample_region_edge(&src, &fg, 0, 8, 0, 8, None, 1.0, &edges, 3.0);
+        let b = sample_region_edge(&src, &fg, 0, 8, 0, 8, None, 1.0, &edges, 3.0);
+        assert_eq!(a, b);
     }
 
     #[test]
