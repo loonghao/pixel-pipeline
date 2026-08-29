@@ -52,7 +52,7 @@
       "report": "outputs/prop/prop-ribbon-incense-burner-v1.report.json",
       "status": "review",
       "mask_source": "corner-background",
-      "compile_contract_sha256": "8a2bad4c83216a73ea94e6c30ec80104d91bf9dd4cd1c49a7c233af9b9852863"
+      "compile_contract_sha256": "6b7ed15df28f02f0f2069404baef532ef23cf104e63b3a373484e2cd0a79f42f"
     },
     {
       "asset_id": "prop-crystal-compass-v1",
@@ -66,7 +66,7 @@
       "report": "outputs/prop/prop-crystal-compass-v1.report.json",
       "status": "review",
       "mask_source": "corner-background",
-      "compile_contract_sha256": "8a2bad4c83216a73ea94e6c30ec80104d91bf9dd4cd1c49a7c233af9b9852863"
+      "compile_contract_sha256": "6b7ed15df28f02f0f2069404baef532ef23cf104e63b3a373484e2cd0a79f42f"
     },
     {
       "asset_id": "prop-wind-chime-lantern-v1",
@@ -80,7 +80,7 @@
       "report": "outputs/prop/prop-wind-chime-lantern-v1.report.json",
       "status": "review",
       "mask_source": "corner-background",
-      "compile_contract_sha256": "8a2bad4c83216a73ea94e6c30ec80104d91bf9dd4cd1c49a7c233af9b9852863"
+      "compile_contract_sha256": "6b7ed15df28f02f0f2069404baef532ef23cf104e63b3a373484e2cd0a79f42f"
     }
   ]
 }

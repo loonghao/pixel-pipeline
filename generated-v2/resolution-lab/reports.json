@@ -6,7 +6,7 @@
     "profile": "character-32",
     "status": "pass",
     "mask_source": "alpha",
-    "edge_recall_per_mille": 625,
+    "edge_recall_per_mille": 621,
     "color_error_milli": 164,
     "body_components": 1,
     "output": "32/character/character-desert-ranger-v2.png"
@@ -18,8 +18,8 @@
     "profile": "character-32",
     "status": "review",
     "mask_source": "corner-background",
-    "edge_recall_per_mille": 442,
-    "color_error_milli": 72,
+    "edge_recall_per_mille": 445,
+    "color_error_milli": 71,
     "body_components": 1,
     "output": "32/character/character-moonlit-tinkerer-v1.png"
   },
@@ -30,7 +30,7 @@
     "profile": "item-64",
     "status": "review",
     "mask_source": "corner-background",
-    "edge_recall_per_mille": 385,
+    "edge_recall_per_mille": 395,
     "color_error_milli": 113,
     "body_components": 2,
     "output": "32/prop/prop-ribbon-incense-burner-v1.png"
@@ -42,8 +42,8 @@
     "profile": "item-64",
     "status": "review",
     "mask_source": "corner-background",
-    "edge_recall_per_mille": 482,
-    "color_error_milli": 152,
+    "edge_recall_per_mille": 467,
+    "color_error_milli": 150,
     "body_components": 1,
     "output": "32/prop/prop-crystal-compass-v1.png"
   },
@@ -66,7 +66,7 @@
     "profile": "character-48",
     "status": "pass",
     "mask_source": "alpha",
-    "edge_recall_per_mille": 645,
+    "edge_recall_per_mille": 650,
     "color_error_milli": 151,
     "body_components": 1,
     "output": "48/character/character-desert-ranger-v2.png"
@@ -78,7 +78,7 @@
     "profile": "character-48",
     "status": "review",
     "mask_source": "corner-background",
-    "edge_recall_per_mille": 528,
+    "edge_recall_per_mille": 529,
     "color_error_milli": 110,
     "body_components": 1,
     "output": "48/character/character-moonlit-tinkerer-v1.png"
@@ -126,8 +126,8 @@
     "profile": "character-64",
     "status": "pass",
     "mask_source": "alpha",
-    "edge_recall_per_mille": 680,
-    "color_error_milli": 149,
+    "edge_recall_per_mille": 674,
+    "color_error_milli": 150,
     "body_components": 1,
     "output": "64/character/character-desert-ranger-v2.png"
   },
@@ -138,8 +138,8 @@
     "profile": "character-64",
     "status": "review",
     "mask_source": "corner-background",
-    "edge_recall_per_mille": 421,
-    "color_error_milli": 108,
+    "edge_recall_per_mille": 422,
+    "color_error_milli": 107,
     "body_components": 1,
     "output": "64/character/character-moonlit-tinkerer-v1.png"
   },
@@ -150,8 +150,8 @@
     "profile": "item-64",
     "status": "review",
     "mask_source": "corner-background",
-    "edge_recall_per_mille": 270,
-    "color_error_milli": 125,
+    "edge_recall_per_mille": 267,
+    "color_error_milli": 126,
     "body_components": 3,
     "output": "64/prop/prop-ribbon-incense-burner-v1.png"
   },
@@ -162,7 +162,7 @@
     "profile": "item-64",
     "status": "review",
     "mask_source": "corner-background",
-    "edge_recall_per_mille": 404,
+    "edge_recall_per_mille": 403,
     "color_error_milli": 160,
     "body_components": 1,
     "output": "64/prop/prop-crystal-compass-v1.png"
@@ -174,8 +174,8 @@
     "profile": "item-64",
     "status": "review",
     "mask_source": "corner-background",
-    "edge_recall_per_mille": 403,
-    "color_error_milli": 106,
+    "edge_recall_per_mille": 412,
+    "color_error_milli": 105,
     "body_components": 1,
     "output": "64/prop/prop-wind-chime-lantern-v1.png"
   }

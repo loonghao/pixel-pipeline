@@ -1,17 +1,14 @@
 GIMP Palette
-Name: pixelpipe character-48 character-desert-ranger-v2
+Name: pixelpipe character-32 character-desert-ranger-v2
 Columns: 8
 #
- 18   8   6	#120806
  43  16   9	#2b1009
  45  24  19	#2d1813
  64  35  28	#40231c
  88  63  53	#583f35
- 98 102  89	#626659
-153 133 107	#99856b
+125 117  98	#7d7562
 154  44  29	#9a2c1d
 221  76  33	#dd4c21
 221 179 139	#ddb38b
-240 103  41	#f06729
-247 145  58	#f7913a
+244 125  49	#f47d31
 251 227 193	#fbe3c1

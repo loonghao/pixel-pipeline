@@ -1,11 +1,15 @@
 GIMP Palette
-Name: pixelpipe character-48 character-moonlit-tinkerer-v1
+Name: pixelpipe character-64 character-moonlit-tinkerer-v1
 Columns: 8
 #
- 38  32  33	#262021
+ 20  15  14	#140f0e
+ 30  25  25	#1e1919
+ 35  31  34	#231f22
  43  16   9	#2b1009
+ 47  39  39	#2f2727
  82  60  54	#523c36
-133  44  36	#852c24
+130  42  35	#822a23
+136  45  38	#882d26
 138 103  87	#8a6757
 141  48  40	#8d3028
 150  50  41	#963229
