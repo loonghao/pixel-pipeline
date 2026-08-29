@@ -5,6 +5,12 @@
   "rights_status": "evaluation-only",
   "rights_note": "Codex-generated sources are retained locally for evaluation; confirm provider and project terms before production training or redistribution.",
   "tool_version": "0.1.0",
+  "resolution_lab": {
+    "path": "resolution-lab/reports.json",
+    "resolutions": [32, 48, 64],
+    "source_anchored": true,
+    "note": "Every variant starts from the original source; review status is not game-ready approval."
+  },
   "items": [
     {
       "asset_id": "character-desert-ranger-v2",

@@ -3,38 +3,263 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Pixel Pipeline · Generated v2 identity stress</title>
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="Resolution comparison lab for game-ready pixel assets.">
+  <title>Pixel Pipeline · Resolution Lab</title>
   <style>
-    :root { color-scheme: dark; font-family: ui-sans-serif, system-ui, sans-serif; background: #111318; color: #f3f4f6; }
-    body { margin: 0; padding: 32px; max-width: 1280px; margin-inline: auto; }
-    h1 { margin: 0 0 8px; font-size: clamp(1.8rem, 4vw, 3rem); }
-    p { color: #aeb4c0; max-width: 850px; line-height: 1.55; }
-    .notice { border: 1px solid #5f4522; background: #2a2115; padding: 14px 16px; border-radius: 10px; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; margin-top: 24px; }
-    article { border: 1px solid #2b303b; border-radius: 14px; background: #171a21; overflow: hidden; }
-    article h2 { font-size: 1rem; margin: 16px 16px 4px; }
-    .meta { margin: 0 16px 12px; font-size: .82rem; color: #9ba3b1; }
-    .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: #2b303b; }
-    figure { margin: 0; background: #0e1014; min-width: 0; }
-    figure img { display: block; width: 100%; aspect-ratio: 1; object-fit: contain; image-rendering: pixelated; background: repeating-conic-gradient(#252a33 0 25%, #191d24 0 50%) 50% / 18px 18px; }
-    figcaption { padding: 7px 9px; font-size: .74rem; color: #aeb4c0; }
-    .metrics { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 16px 16px; }
-    .pill { font-size: .72rem; border-radius: 999px; padding: 4px 8px; background: #242a36; color: #dce2ec; }
-    .pass { background: #173b2a; color: #8de3b0; } .review { background: #46351d; color: #ffca72; }
-    a { color: #8fc9ff; }
+    :root {
+      color-scheme: dark;
+      --canvas: #0b0e0d;
+      --surface: #121715;
+      --surface-raised: #19201b;
+      --surface-inset: #090c0a;
+      --ink: #ecf1e9;
+      --ink-2: #b5c0b5;
+      --ink-3: #798579;
+      --line: rgb(236 241 233 / 11%);
+      --line-strong: rgb(236 241 233 / 22%);
+      --acid: #c5f26a;
+      --acid-dim: #78943d;
+      --review: #f0bd69;
+      --danger: #ec826d;
+      --space: 4px;
+      --sans: "Aptos", "Segoe UI Variable Text", "Segoe UI", sans-serif;
+      --display: "Bahnschrift SemiCondensed", "Aptos Display", "Segoe UI Variable Display", sans-serif;
+      --mono: "Cascadia Code", "Consolas", monospace;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 320px; background: var(--canvas); color: var(--ink); font-family: var(--sans); line-height: 1.45; }
+    body::before { content: ""; position: fixed; inset: 0; pointer-events: none; opacity: .25; background-image: linear-gradient(rgb(255 255 255 / 2%) 1px, transparent 1px), linear-gradient(90deg, rgb(255 255 255 / 2%) 1px, transparent 1px); background-size: 32px 32px; mask-image: linear-gradient(to bottom, #000, transparent 78%); }
+    main { width: min(1440px, calc(100% - 48px)); margin: 0 auto; padding: 48px 0 64px; position: relative; }
+    .masthead { display: flex; justify-content: space-between; gap: 32px; align-items: end; border-bottom: 1px solid var(--line); padding-bottom: 28px; }
+    .kicker, .eyebrow { font: 600 11px/1.2 var(--mono); text-transform: uppercase; letter-spacing: .14em; color: var(--acid); }
+    h1 { margin: 10px 0 8px; font: 700 clamp(34px, 6vw, 72px)/.9 var(--display); letter-spacing: -.045em; text-transform: uppercase; }
+    h1 span { display: block; }
+    .lede { max-width: 670px; margin: 0; color: var(--ink-2); font-size: 15px; }
+    .build-note { max-width: 280px; padding: 14px 16px; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; color: var(--ink-3); font-size: 12px; }
+    .build-note code { display: block; margin-top: 6px; color: var(--ink); font: 12px var(--mono); overflow-wrap: anywhere; }
+    .control-bar { display: flex; align-items: end; justify-content: space-between; gap: 20px; flex-wrap: wrap; padding: 24px 0 20px; }
+    .control { display: grid; gap: 7px; }
+    label { color: var(--ink-3); font: 600 11px/1.2 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+    select, button { font: inherit; }
+    select { min-height: 40px; border: 1px solid var(--line-strong); border-radius: 6px; padding: 0 34px 0 12px; color: var(--ink); background: var(--surface-inset); }
+    select:focus-visible, button:focus-visible { outline: 2px solid var(--acid); outline-offset: 2px; }
+    .resolution-tabs { display: flex; gap: 6px; }
+    .resolution-tabs button { min-width: 72px; min-height: 40px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink-2); cursor: pointer; transition: border-color 140ms ease-out, color 140ms ease-out, transform 140ms ease-out; }
+    .resolution-tabs button:hover { border-color: var(--acid-dim); color: var(--ink); }
+    .resolution-tabs button:active { transform: scale(.97); }
+    .resolution-tabs button[aria-pressed="true"] { border-color: var(--acid); color: var(--canvas); background: var(--acid); font-weight: 700; }
+    .lab-grid { display: grid; grid-template-columns: minmax(180px, .75fr) repeat(3, minmax(180px, 1fr)); gap: 10px; align-items: stretch; }
+    .lab-grid.single { grid-template-columns: minmax(220px, .7fr) minmax(240px, 1fr); }
+    .tile { min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); overflow: hidden; }
+    .tile-head { display: flex; justify-content: space-between; gap: 10px; align-items: start; padding: 13px 14px 12px; border-bottom: 1px solid var(--line); }
+    .tile-head strong { display: block; font-size: 14px; }
+    .tile-head small { display: block; margin-top: 2px; color: var(--ink-3); font: 11px var(--mono); }
+    .tile img { display: block; width: 100%; aspect-ratio: 1; object-fit: contain; image-rendering: pixelated; background-color: var(--surface-inset); background-image: repeating-conic-gradient(#202820 0 25%, #111611 0 50%); background-size: 20px 20px; }
+    .tile.source img { image-rendering: auto; background-image: linear-gradient(135deg, #202720, #0e120f); }
+    .tile-foot { display: flex; flex-wrap: wrap; gap: 5px; padding: 10px 14px 13px; color: var(--ink-3); font: 11px var(--mono); }
+    .chip { padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; }
+    .chip.pass { border-color: rgb(197 242 106 / 45%); color: var(--acid); }
+    .chip.review { border-color: rgb(240 189 105 / 45%); color: var(--review); }
+    .asset-summary { display: flex; justify-content: space-between; align-items: end; gap: 20px; padding: 36px 0 16px; }
+    .asset-summary h2 { margin: 6px 0 4px; font: 600 28px/1.05 var(--display); letter-spacing: -.02em; }
+    .asset-summary p { margin: 0; color: var(--ink-2); }
+    .asset-summary code { color: var(--ink-3); font: 11px var(--mono); }
+    .metrics { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 8px; margin-top: 10px; }
+    .metric { padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: rgb(18 23 21 / 85%); }
+    .metric span { display: block; color: var(--ink-3); font: 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+    .metric strong { display: block; margin-top: 5px; font: 600 20px var(--mono); font-variant-numeric: tabular-nums; }
+    .metric small { display: block; margin-top: 4px; color: var(--ink-3); font-size: 11px; }
+    .method { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 36px; }
+    .method article { padding: 16px; border-top: 1px solid var(--line-strong); }
+    .method h3 { margin: 0 0 8px; font-size: 14px; }
+    .method p { margin: 0; color: var(--ink-2); font-size: 13px; }
+    .method code { display: block; margin-top: 12px; color: var(--acid); font: 11px var(--mono); }
+    footer { display: flex; justify-content: space-between; gap: 12px; width: min(1440px, calc(100% - 48px)); margin: 0 auto; padding: 18px 0 28px; color: var(--ink-3); font: 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+    a { color: var(--acid); }
+    @media (max-width: 960px) { .lab-grid { grid-template-columns: repeat(2, minmax(180px, 1fr)); } .lab-grid .source { grid-column: 1 / -1; } .metrics { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 620px) { main { width: min(100% - 28px, 520px); padding-top: 28px; } .masthead { display: block; } .build-note { margin-top: 20px; max-width: none; } .control-bar { align-items: stretch; } .control, .resolution-tabs { width: 100%; } .resolution-tabs button { flex: 1; } .lab-grid, .lab-grid.single { grid-template-columns: 1fr; } .lab-grid .source { grid-column: auto; } .asset-summary { display: block; } .metrics { grid-template-columns: 1fr 1fr; } footer { width: calc(100% - 28px); display: block; } footer span { display: block; margin-top: 8px; } }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; } }
   </style>
 </head>
 <body>
-  <h1>Generated v2 · identity stress</h1>
-  <p>Five Codex-generated game-asset sources processed by the deterministic Pixel Pipeline. The comparison deliberately targets face landmarks, weapon/ribbon silhouettes, thin chains, and high-chroma accents.</p>
-  <p class="notice"><strong>Evaluation-only:</strong> flat-background sources are retained to exercise foreground inference. A <code>review</code> result is a safe failure, not a game-ready approval.</p>
-  <main class="grid">
-    <article><h2>Desert ranger</h2><p class="meta">character-48 · 48×48 · face + spear + tassel</p><div class="compare"><figure><img src="raw/character/character-desert-ranger-v2.png" alt="Desert ranger source"><figcaption>source</figcaption></figure><figure><img src="outputs/character/character-desert-ranger-v2.png" alt="Desert ranger pixel output"><figcaption>final · pass</figcaption></figure></div><div class="metrics"><span class="pill pass">pass</span><span class="pill">mask: alpha</span><span class="pill">edge recall: 804‰</span><span class="pill">colour error: 78‰</span></div></article>
-    <article><h2>Moonlit tinkerer</h2><p class="meta">character-48 · 48×48 · face + wrench + scarf</p><div class="compare"><figure><img src="raw/character/character-moonlit-tinkerer-v1.png" alt="Moonlit tinkerer source"><figcaption>source</figcaption></figure><figure><img src="outputs/character/character-moonlit-tinkerer-v1.png" alt="Moonlit tinkerer pixel output"><figcaption>final · review</figcaption></figure></div><div class="metrics"><span class="pill review">review</span><span class="pill">mask: corner-background</span><span class="pill">edge recall: 853‰</span><span class="pill">colour error: 57‰</span></div></article>
-    <article><h2>Ribbon incense burner</h2><p class="meta">item-64 · 64×64 · bowl + handles + red ribbon</p><div class="compare"><figure><img src="raw/prop/prop-ribbon-incense-burner-v1.png" alt="Ribbon incense burner source"><figcaption>source</figcaption></figure><figure><img src="outputs/prop/prop-ribbon-incense-burner-v1.png" alt="Ribbon incense burner pixel output"><figcaption>final · review</figcaption></figure></div><div class="metrics"><span class="pill review">review</span><span class="pill">mask: corner-background</span><span class="pill">edge recall: 270‰</span><span class="pill">colour error: 125‰</span></div></article>
-    <article><h2>Crystal compass</h2><p class="meta">item-64 · 64×64 · needle + four fins + chain</p><div class="compare"><figure><img src="raw/prop/prop-crystal-compass-v1.png" alt="Crystal compass source"><figcaption>source</figcaption></figure><figure><img src="outputs/prop/prop-crystal-compass-v1.png" alt="Crystal compass pixel output"><figcaption>final · review</figcaption></figure></div><div class="metrics"><span class="pill review">review</span><span class="pill">mask: corner-background</span><span class="pill">edge recall: 404‰</span><span class="pill">colour error: 160‰</span></div></article>
-    <article><h2>Wind-chime lantern</h2><p class="meta">item-64 · 64×64 · window + flame + three charms</p><div class="compare"><figure><img src="raw/prop/prop-wind-chime-lantern-v1.png" alt="Wind-chime lantern source"><figcaption>source</figcaption></figure><figure><img src="outputs/prop/prop-wind-chime-lantern-v1.png" alt="Wind-chime lantern pixel output"><figcaption>final · review</figcaption></figure></div><div class="metrics"><span class="pill review">review</span><span class="pill">mask: corner-background</span><span class="pill">edge recall: 403‰</span><span class="pill">colour error: 106‰</span></div></article>
+  <main>
+    <header class="masthead">
+      <div>
+        <span class="kicker">Game asset observatory / resolution lab</span>
+        <h1><span>Pixel</span><span>Pipeline</span></h1>
+        <p class="lede">One source, three target grids. Inspect where faces, weapons, ribbons, chains, and color roles survive — and where the compiler routes a candidate to review.</p>
+      </div>
+      <aside class="build-note">
+        <span class="eyebrow">Experiment contract</span>
+        <code>resolution-lab / source-anchored</code>
+        <p>Every output starts from the original generated source. No chained conversions.</p>
+      </aside>
+    </header>
+
+    <section class="control-bar" aria-label="Resolution lab controls">
+      <div class="control">
+        <label for="asset-select">Asset under inspection</label>
+        <select id="asset-select"></select>
+      </div>
+      <div class="control">
+        <label>Target resolution</label>
+        <div id="resolution-tabs" class="resolution-tabs" role="group" aria-label="Target resolution"></div>
+      </div>
+    </section>
+
+    <section id="asset-summary" class="asset-summary" aria-live="polite"></section>
+    <section id="comparison" aria-label="Source and target comparison"></section>
+    <section id="metrics" class="metrics" aria-label="Resolution metrics"></section>
+
+    <section class="method">
+      <article>
+        <h3>How to read this view</h3>
+        <p>Compare at 100% nearest-neighbor scale first. A higher resolution is not automatically better: look for the smallest grid that keeps the identity parts needed by the game contract.</p>
+        <code>SOURCE → 32 → 48 → 64</code>
+      </article>
+      <article>
+        <h3>Training hand-off</h3>
+        <p>These 15 deterministic variants are the first resolution-stratified training candidates. Artist-approved target pixels and semantic part masks still remain the production supervision gate.</p>
+        <code>source hash + profile + report + palette</code>
+      </article>
+    </section>
+    <p style="margin-top:32px;color:var(--ink-3);font-size:13px"><a href="../index.html">← Open the stage-by-stage demo</a> · <a href="https://github.com/loonghao/pixel-pipeline">Source and manifests</a></p>
   </main>
-  <p><a href="../index.html">40-asset interactive stage demo</a> · <a href="https://github.com/loonghao/pixel-pipeline">source and training manifests</a></p>
+  <footer><span>PIXEL PIPELINE / RESOLUTION LAB</span><span>Static artifact · no external runtime</span></footer>
+  <script src="resolution-data.js"></script>
+  <script>
+    (() => {
+      "use strict";
+      const payload = window.PIXEL_PIPELINE_RESOLUTION_LAB;
+      const byId = (id) => document.getElementById(id);
+      const select = byId("asset-select");
+      const tabs = byId("resolution-tabs");
+      const summary = byId("asset-summary");
+      const comparison = byId("comparison");
+      const metrics = byId("metrics");
+      const query = new URLSearchParams(window.location.search);
+      const state = {
+        assetId: payload.assets.some((asset) => asset.id === query.get("asset")) ? query.get("asset") : payload.assets[0].id,
+        resolution: query.get("resolution") === "all" || payload.resolutions.includes(Number(query.get("resolution"))) ? query.get("resolution") || "all" : "all"
+      };
+
+      const selected = () => payload.assets.find((asset) => asset.id === state.assetId) || payload.assets[0];
+      const activeResolutions = () => state.resolution === "all" ? payload.resolutions : [Number(state.resolution)];
+      const statusClass = (status) => status === "pass" ? "pass" : "review";
+
+      function syncUrl() {
+        const url = new URL(window.location.href);
+        url.searchParams.set("asset", state.assetId);
+        url.searchParams.set("resolution", state.resolution);
+        window.history.replaceState(null, "", url);
+      }
+
+      function renderControls() {
+        select.replaceChildren();
+        payload.assets.forEach((asset) => {
+          const option = document.createElement("option");
+          option.value = asset.id;
+          option.textContent = `${asset.title} · ${asset.category}`;
+          select.append(option);
+        });
+        select.value = state.assetId;
+        tabs.replaceChildren();
+        ["all", ...payload.resolutions].forEach((resolution) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.textContent = resolution === "all" ? "All" : `${resolution}×${resolution}`;
+          button.setAttribute("aria-pressed", String(String(resolution) === String(state.resolution)));
+          button.addEventListener("click", () => { state.resolution = String(resolution); syncUrl(); render(); });
+          tabs.append(button);
+        });
+      }
+
+      function imageTile(title, subtitle, path, extraClass, chips) {
+        const tile = document.createElement("article");
+        tile.className = `tile ${extraClass || ""}`;
+        const head = document.createElement("div");
+        head.className = "tile-head";
+        const text = document.createElement("div");
+        const strong = document.createElement("strong");
+        strong.textContent = title;
+        const small = document.createElement("small");
+        small.textContent = subtitle;
+        text.append(strong, small);
+        head.append(text);
+        const image = document.createElement("img");
+        image.src = path;
+        image.alt = `${selected().title} ${title}`;
+        image.loading = "eager";
+        image.decoding = "async";
+        const foot = document.createElement("div");
+        foot.className = "tile-foot";
+        (chips || []).forEach(({ text: chipText, kind }) => { const chip = document.createElement("span"); chip.className = `chip ${kind || ""}`; chip.textContent = chipText; foot.append(chip); });
+        tile.append(head, image, foot);
+        return tile;
+      }
+
+      function renderSummary(asset) {
+        summary.replaceChildren();
+        const copy = document.createElement("div");
+        const eyebrow = document.createElement("span");
+        eyebrow.className = "eyebrow";
+        eyebrow.textContent = `${asset.category} / identity stress`;
+        const title = document.createElement("h2");
+        title.textContent = asset.title;
+        const focus = document.createElement("p");
+        focus.textContent = asset.focus;
+        const source = document.createElement("code");
+        source.textContent = `source: ${asset.source}`;
+        copy.append(eyebrow, title, focus, source);
+        summary.append(copy);
+      }
+
+      function renderComparison(asset) {
+        comparison.replaceChildren();
+        const grid = document.createElement("div");
+        grid.className = state.resolution === "all" ? "lab-grid" : "lab-grid single";
+        grid.append(imageTile("Source", "original generated input", asset.source, "source", [{ text: "authoritative input" }]));
+        activeResolutions().forEach((size) => {
+          const variant = asset.variants[String(size)];
+          grid.append(imageTile(`${size}×${size}`, variant.profile, variant.path, "output", [
+            { text: variant.status, kind: statusClass(variant.status) },
+            { text: `edge ${variant.edge_recall_per_mille}‰` },
+            { text: `colour ${variant.color_error_milli}‰` }
+          ]));
+        });
+        comparison.append(grid);
+      }
+
+      function renderMetrics(asset) {
+        metrics.replaceChildren();
+        activeResolutions().forEach((size) => {
+          const variant = asset.variants[String(size)];
+          const metric = document.createElement("article");
+          metric.className = "metric";
+          const label = document.createElement("span");
+          label.textContent = `${size}×${size} / ${variant.profile}`;
+          const value = document.createElement("strong");
+          value.textContent = variant.status.toUpperCase();
+          value.style.color = variant.status === "pass" ? "var(--acid)" : "var(--review)";
+          const note = document.createElement("small");
+          note.textContent = `edge ${variant.edge_recall_per_mille}‰ · colour ${variant.color_error_milli}‰ · mask ${variant.mask_source}`;
+          metric.append(label, value, note);
+          metrics.append(metric);
+        });
+      }
+
+      function render() {
+        const asset = selected();
+        renderControls();
+        renderSummary(asset);
+        renderComparison(asset);
+        renderMetrics(asset);
+      }
+
+      select.addEventListener("change", (event) => { state.assetId = event.target.value; syncUrl(); render(); });
+      render();
+    })();
+  </script>
 </body>
 </html>
