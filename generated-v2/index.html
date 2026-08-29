@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pixel Pipeline · Generated v2 identity stress</title>
+  <style>
+    :root { color-scheme: dark; font-family: ui-sans-serif, system-ui, sans-serif; background: #111318; color: #f3f4f6; }
+    body { margin: 0; padding: 32px; max-width: 1280px; margin-inline: auto; }
+    h1 { margin: 0 0 8px; font-size: clamp(1.8rem, 4vw, 3rem); }
+    p { color: #aeb4c0; max-width: 850px; line-height: 1.55; }
+    .notice { border: 1px solid #5f4522; background: #2a2115; padding: 14px 16px; border-radius: 10px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; margin-top: 24px; }
+    article { border: 1px solid #2b303b; border-radius: 14px; background: #171a21; overflow: hidden; }
+    article h2 { font-size: 1rem; margin: 16px 16px 4px; }
+    .meta { margin: 0 16px 12px; font-size: .82rem; color: #9ba3b1; }
+    .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: #2b303b; }
+    figure { margin: 0; background: #0e1014; min-width: 0; }
+    figure img { display: block; width: 100%; aspect-ratio: 1; object-fit: contain; image-rendering: pixelated; background: repeating-conic-gradient(#252a33 0 25%, #191d24 0 50%) 50% / 18px 18px; }
+    figcaption { padding: 7px 9px; font-size: .74rem; color: #aeb4c0; }
+    .metrics { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 16px 16px; }
+    .pill { font-size: .72rem; border-radius: 999px; padding: 4px 8px; background: #242a36; color: #dce2ec; }
+    .pass { background: #173b2a; color: #8de3b0; } .review { background: #46351d; color: #ffca72; }
+    a { color: #8fc9ff; }
+  </style>
+</head>
+<body>
+  <h1>Generated v2 · identity stress</h1>
+  <p>Five Codex-generated game-asset sources processed by the deterministic Pixel Pipeline. The comparison deliberately targets face landmarks, weapon/ribbon silhouettes, thin chains, and high-chroma accents.</p>
+  <p class="notice"><strong>Evaluation-only:</strong> flat-background sources are retained to exercise foreground inference. A <code>review</code> result is a safe failure, not a game-ready approval.</p>
+  <main class="grid">
+    <article><h2>Desert ranger</h2><p class="meta">character-48 · 48×48 · face + spear + tassel</p><div class="compare"><figure><img src="raw/character/character-desert-ranger-v2.png" alt="Desert ranger source"><figcaption>source</figcaption></figure><figure><img src="outputs/character/character-desert-ranger-v2.png" alt="Desert ranger pixel output"><figcaption>final · pass</figcaption></figure></div><div class="metrics"><span class="pill pass">pass</span><span class="pill">mask: alpha</span><span class="pill">edge recall: 804‰</span><span class="pill">colour error: 78‰</span></div></article>
+    <article><h2>Moonlit tinkerer</h2><p class="meta">character-48 · 48×48 · face + wrench + scarf</p><div class="compare"><figure><img src="raw/character/character-moonlit-tinkerer-v1.png" alt="Moonlit tinkerer source"><figcaption>source</figcaption></figure><figure><img src="outputs/character/character-moonlit-tinkerer-v1.png" alt="Moonlit tinkerer pixel output"><figcaption>final · review</figcaption></figure></div><div class="metrics"><span class="pill review">review</span><span class="pill">mask: corner-background</span><span class="pill">edge recall: 853‰</span><span class="pill">colour error: 57‰</span></div></article>
+    <article><h2>Ribbon incense burner</h2><p class="meta">item-64 · 64×64 · bowl + handles + red ribbon</p><div class="compare"><figure><img src="raw/prop/prop-ribbon-incense-burner-v1.png" alt="Ribbon incense burner source"><figcaption>source</figcaption></figure><figure><img src="outputs/prop/prop-ribbon-incense-burner-v1.png" alt="Ribbon incense burner pixel output"><figcaption>final · review</figcaption></figure></div><div class="metrics"><span class="pill review">review</span><span class="pill">mask: corner-background</span><span class="pill">edge recall: 270‰</span><span class="pill">colour error: 125‰</span></div></article>
+    <article><h2>Crystal compass</h2><p class="meta">item-64 · 64×64 · needle + four fins + chain</p><div class="compare"><figure><img src="raw/prop/prop-crystal-compass-v1.png" alt="Crystal compass source"><figcaption>source</figcaption></figure><figure><img src="outputs/prop/prop-crystal-compass-v1.png" alt="Crystal compass pixel output"><figcaption>final · review</figcaption></figure></div><div class="metrics"><span class="pill review">review</span><span class="pill">mask: corner-background</span><span class="pill">edge recall: 404‰</span><span class="pill">colour error: 160‰</span></div></article>
+    <article><h2>Wind-chime lantern</h2><p class="meta">item-64 · 64×64 · window + flame + three charms</p><div class="compare"><figure><img src="raw/prop/prop-wind-chime-lantern-v1.png" alt="Wind-chime lantern source"><figcaption>source</figcaption></figure><figure><img src="outputs/prop/prop-wind-chime-lantern-v1.png" alt="Wind-chime lantern pixel output"><figcaption>final · review</figcaption></figure></div><div class="metrics"><span class="pill review">review</span><span class="pill">mask: corner-background</span><span class="pill">edge recall: 403‰</span><span class="pill">colour error: 106‰</span></div></article>
+  </main>
+  <p><a href="../index.html">40-asset interactive stage demo</a> · <a href="https://github.com/loonghao/pixel-pipeline">source and training manifests</a></p>
+</body>
+</html>

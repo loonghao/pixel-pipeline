@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "dataset_id": "generated-v2-identity-stress",
+  "generated_by": "codex-built-in-imagegen",
+  "rights_status": "evaluation-only",
+  "rights_note": "Codex-generated sources are retained locally for evaluation; confirm provider and project terms before production training or redistribution.",
+  "tool_version": "0.1.0",
+  "items": [
+    {
+      "asset_id": "character-desert-ranger-v2",
+      "category": "character",
+      "prompt_focus": "separated eyes, mouth mark, hair silhouette, full spear, orange tassel",
+      "source": "raw/character/character-desert-ranger-v2.png",
+      "source_sha256": "548fe818045eb8b311a7ea679229f7fbe92b1fec630197e01b5738d0a0e62e8b",
+      "profile": "character-48",
+      "target": "48x48",
+      "output": "outputs/character/character-desert-ranger-v2.png",
+      "report": "outputs/character/character-desert-ranger-v2.report.json",
+      "status": "pass",
+      "mask_source": "alpha",
+      "compile_contract_sha256": "0c05a35491d2dad36e073f73c99c0769573793cae416ce7bf9c19975c9e9b14c"
+    },
+    {
+      "asset_id": "character-moonlit-tinkerer-v1",
+      "category": "character",
+      "prompt_focus": "face landmarks, goggles, full wrench jaw, red scarf tail",
+      "source": "raw/character/character-moonlit-tinkerer-v1.png",
+      "source_sha256": "5bdf9dcbfab15292e2f527cac26839d45374bacdec9da7a6eb3c32cf0235a718",
+      "profile": "character-48",
+      "target": "48x48",
+      "output": "outputs/character/character-moonlit-tinkerer-v1.png",
+      "report": "outputs/character/character-moonlit-tinkerer-v1.report.json",
+      "status": "review",
+      "mask_source": "corner-background",
+      "compile_contract_sha256": "0c05a35491d2dad36e073f73c99c0769573793cae416ce7bf9c19975c9e9b14c"
+    },
+    {
+      "asset_id": "prop-ribbon-incense-burner-v1",
+      "category": "prop",
+      "prompt_focus": "open ember bowl, two handles, red ribbon, three gold beads",
+      "source": "raw/prop/prop-ribbon-incense-burner-v1.png",
+      "source_sha256": "21789375055f170f0652190e22d4d64be8bdb85d3dfbd768449085b04b354ed4",
+      "profile": "item-64",
+      "target": "64x64",
+      "output": "outputs/prop/prop-ribbon-incense-burner-v1.png",
+      "report": "outputs/prop/prop-ribbon-incense-burner-v1.report.json",
+      "status": "review",
+      "mask_source": "corner-background",
+      "compile_contract_sha256": "8a2bad4c83216a73ea94e6c30ec80104d91bf9dd4cd1c49a7c233af9b9852863"
+    },
+    {
+      "asset_id": "prop-crystal-compass-v1",
+      "category": "prop",
+      "prompt_focus": "thin central needle, four fins, chain links, cyan crystal",
+      "source": "raw/prop/prop-crystal-compass-v1.png",
+      "source_sha256": "37a24a13b26cd21ac0b2324be9ee98f7eef4e817f4e881fc6805287e4e4f1263",
+      "profile": "item-64",
+      "target": "64x64",
+      "output": "outputs/prop/prop-crystal-compass-v1.png",
+      "report": "outputs/prop/prop-crystal-compass-v1.report.json",
+      "status": "review",
+      "mask_source": "corner-background",
+      "compile_contract_sha256": "8a2bad4c83216a73ea94e6c30ec80104d91bf9dd4cd1c49a7c233af9b9852863"
+    },
+    {
+      "asset_id": "prop-wind-chime-lantern-v1",
+      "category": "prop",
+      "prompt_focus": "open lantern window, blue flame, chain, three separated charms",
+      "source": "raw/prop/prop-wind-chime-lantern-v1.png",
+      "source_sha256": "d1dc257c46bb65f9b486d4d15b32989badf66816f09d1b5c01bc8fa011864e30",
+      "profile": "item-64",
+      "target": "64x64",
+      "output": "outputs/prop/prop-wind-chime-lantern-v1.png",
+      "report": "outputs/prop/prop-wind-chime-lantern-v1.report.json",
+      "status": "review",
+      "mask_source": "corner-background",
+      "compile_contract_sha256": "8a2bad4c83216a73ea94e6c30ec80104d91bf9dd4cd1c49a7c233af9b9852863"
+    }
+  ]
+}

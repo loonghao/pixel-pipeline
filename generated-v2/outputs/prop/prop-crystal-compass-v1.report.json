@@ -1,0 +1,50 @@
+{
+  "schema_version": 3,
+  "tool_version": "0.1.0",
+  "status": "review",
+  "input": "training\\generated-v2\\raw\\prop\\prop-crystal-compass-v1.png",
+  "output": "training\\generated-v2\\outputs\\prop\\prop-crystal-compass-v1.png",
+  "profile": "item-64",
+  "profile_sha256": "0718adc64670176a300e65153a68478ce505bcfc9648bb3bcc796e04a7f81caa",
+  "compile_contract_sha256": "8a2bad4c83216a73ea94e6c30ec80104d91bf9dd4cd1c49a7c233af9b9852863",
+  "input_sha256": "37a24a13b26cd21ac0b2324be9ee98f7eef4e817f4e881fc6805287e4e4f1263",
+  "canvas": {
+    "width": 64,
+    "height": 64
+  },
+  "mask_source": "corner-background",
+  "cached": false,
+  "qa": {
+    "dimension_valid": true,
+    "alpha_binary": true,
+    "body_pixels": 1354,
+    "outline_pixels": 157,
+    "internal_outline_pixels": 67,
+    "body_components": 1,
+    "palette_colors": 14,
+    "palette_limit": 16,
+    "outline_extra_pixels": 0,
+    "outline_missing_pixels": 0,
+    "outline_color_mismatch_pixels": 0,
+    "body_pixels_in_reserved_border": 0,
+    "perceptual_color_error_milli": 160,
+    "detail_edge_recall_per_mille": 404
+  },
+  "reasons": [
+    {
+      "code": "SEMANTIC_CONFIDENCE_LOW",
+      "status": "review",
+      "detail": "foreground inferred from flat background"
+    }
+  ],
+  "warnings": [],
+  "artifacts": {
+    "final_png": "training\\generated-v2\\outputs\\prop\\prop-crystal-compass-v1.png",
+    "body": "training\\generated-v2\\outputs\\prop\\prop-crystal-compass-v1.body.png",
+    "body_mask": "training\\generated-v2\\outputs\\prop\\prop-crystal-compass-v1.body-mask.png",
+    "outline_mask": "training\\generated-v2\\outputs\\prop\\prop-crystal-compass-v1.outline-mask.png",
+    "preview": "training\\generated-v2\\outputs\\prop\\prop-crystal-compass-v1.preview.png",
+    "report": "training\\generated-v2\\outputs\\prop\\prop-crystal-compass-v1.report.json",
+    "palette": "training\\generated-v2\\outputs\\prop\\prop-crystal-compass-v1.gpl"
+  }
+}

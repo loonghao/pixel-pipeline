@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="Interactive stage-by-stage Pixel Pipeline validation demo.">
+  <title>Pixel Pipeline / Stage Scope</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="demo.css">
+</head>
+<body>
+  <a class="skip-link" href="#stage-scope">Skip to stage comparison</a>
+  <div class="ambient-grid" aria-hidden="true"></div>
+  <div class="scan-beam" aria-hidden="true"></div>
+
+  <header class="masthead">
+    <div class="brand-lockup">
+      <span class="brand-kicker">Generated-source regression observatory</span>
+      <h1><span>PIXEL</span><span>PIPELINE</span></h1>
+      <p class="brand-subtitle">STAGE SCOPE <b aria-hidden="true">/</b> deterministic asset compiler telemetry</p>
+    </div>
+    <div class="build-plate" aria-label="Current build identity">
+      <span class="plate-label">ACTIVE SNAPSHOT</span>
+      <strong id="buildLabel">Loading…</strong>
+      <code id="buildHash">-</code>
+      <span id="buildState" class="build-state">-</span>
+    </div>
+  </header>
+
+  <noscript>
+    <p class="noscript">This static demo needs JavaScript to switch assets and processing stages.</p>
+  </noscript>
+
+  <main>
+    <section class="telemetry-ribbon" aria-label="Validation summary">
+      <div class="snapshot-control control-block">
+        <label for="snapshotSelect">Current version</label>
+        <select id="snapshotSelect"></select>
+      </div>
+      <div class="telemetry-cell acid">
+        <span>Assets</span><strong id="statAssets">-</strong><small>corpus</small>
+      </div>
+      <div class="telemetry-cell">
+        <span>Exact</span><strong id="statExact">-</strong><small>dimensions</small>
+      </div>
+      <div class="telemetry-cell">
+        <span>Throughput</span><strong id="statThroughput">-</strong><small>assets / sec</small>
+      </div>
+      <div class="telemetry-cell">
+        <span>Static-ready</span><strong id="statGameReady">-</strong><small>art + engine pending</small>
+      </div>
+      <div class="telemetry-cell">
+        <span>Batch</span><strong id="statBatch">-</strong><small>milliseconds</small>
+      </div>
+    </section>
+
+    <section class="workbench">
+      <aside class="library-panel" aria-label="Asset library">
+        <div class="panel-heading">
+          <div><h2>Asset library</h2></div>
+          <output id="resultCount" aria-live="polite">0 / 0</output>
+        </div>
+
+        <div class="filter-stack">
+          <label class="search-field" for="assetSearch">
+            <span>Find an asset</span>
+            <input id="assetSearch" type="search" autocomplete="off" placeholder="name, style, profile…">
+          </label>
+          <div id="categoryFilters" class="segment-filter" aria-label="Filter by category"></div>
+          <label class="select-field" for="statusFilter">
+            <span>Gate</span>
+            <select id="statusFilter">
+              <option value="all">All states</option>
+              <option value="pass">Pass</option>
+              <option value="review">Review</option>
+              <option value="fail">Fail</option>
+            </select>
+          </label>
+        </div>
+
+        <div id="assetGrid" class="asset-grid" role="list"></div>
+        <div id="emptyState" class="empty-state" hidden>No assets match this signal.</div>
+      </aside>
+
+      <section id="stage-scope" class="scope-panel" aria-label="Processing stage comparison">
+        <div class="scope-heading">
+          <div>
+            <span id="assetEyebrow" class="asset-eyebrow">-</span>
+            <h2 id="assetTitle">Choose an asset</h2>
+            <p id="assetStyle">-</p>
+          </div>
+          <div class="asset-nav" aria-label="Navigate assets">
+            <button id="previousAsset" type="button" aria-label="Previous asset">←</button>
+            <span id="assetPosition">- / -</span>
+            <button id="nextAsset" type="button" aria-label="Next asset">→</button>
+          </div>
+        </div>
+
+        <div class="compare-toolbar">
+          <label for="referenceSelect">
+            <span>Reference version</span>
+            <select id="referenceSelect"></select>
+          </label>
+          <label for="leftStageSelect">
+            <span>Left stage</span>
+            <select id="leftStageSelect"></select>
+          </label>
+          <label for="rightStageSelect">
+            <span>Right stage</span>
+            <select id="rightStageSelect"></select>
+          </label>
+          <label class="zoom-control" for="zoomRange">
+            <span>Zoom <output id="zoomValue">100%</output></span>
+            <input id="zoomRange" type="range" min="70" max="260" value="100" step="10">
+          </label>
+          <button id="backdropToggle" class="tool-button" type="button">Grid / dark</button>
+        </div>
+
+        <div id="compareFrame" class="compare-frame checkerboard" style="--split: 50%; --zoom: 1">
+          <div class="frame-corner tl" aria-hidden="true"></div>
+          <div class="frame-corner br" aria-hidden="true"></div>
+          <img id="leftImage" class="stage-image" alt="">
+          <div id="rightClip" class="right-clip">
+            <img id="rightImage" class="stage-image" alt="">
+          </div>
+          <div class="split-line" aria-hidden="true"><span>↔</span></div>
+          <span id="leftLabel" class="image-label left-label">-</span>
+          <span id="rightLabel" class="image-label right-label">-</span>
+          <input id="splitRange" class="split-range" type="range" min="0" max="100" value="50" aria-label="Drag to compare stages">
+        </div>
+
+        <section class="stage-strip" aria-labelledby="stageStripTitle">
+          <div class="strip-title">
+            <div><h3 id="stageStripTitle">Processing stages</h3><p id="stageDescription">Select a stage to inspect it on the right.</p></div>
+          </div>
+          <div id="stageRail" class="stage-rail"></div>
+        </section>
+
+        <section class="parameter-ledger" aria-labelledby="parameterTitle">
+          <div class="ledger-heading">
+            <div>
+              <span class="ledger-kicker">Active stage parameters</span>
+              <h3 id="parameterTitle">Parameter ledger</h3>
+              <p id="parameterSummary">Select a stage to inspect its recorded values.</p>
+            </div>
+            <div class="ledger-actions">
+              <code id="parameterStageId">-</code>
+              <button id="copyParameters" type="button">Copy stage JSON</button>
+              <output id="parameterCopyStatus" aria-live="polite"></output>
+            </div>
+          </div>
+          <div id="parameterGroups" class="parameter-groups"></div>
+          <details class="prompt-record">
+            <summary>Source generation prompt</summary>
+            <pre id="sourcePrompt"></pre>
+          </details>
+        </section>
+
+        <section class="evidence-grid" aria-label="Asset evidence">
+          <article class="metrics-block">
+            <div class="block-title"><h3>Contract readout</h3></div>
+            <dl id="metricList" class="metric-list"></dl>
+          </article>
+          <article class="routing-block">
+            <div class="block-title"><h3>Gate routing</h3></div>
+            <div id="gateStatus" class="gate-status">-</div>
+            <ul id="reasonList" class="reason-list"></ul>
+          </article>
+          <article class="version-block">
+            <div class="block-title"><h3>Version evidence</h3></div>
+            <dl id="versionList" class="version-list"></dl>
+            <button id="copyLink" class="copy-link" type="button">Copy this view</button>
+            <output id="copyStatus" class="copy-status" aria-live="polite"></output>
+          </article>
+        </section>
+      </section>
+    </section>
+
+    <section class="method-note">
+      <span>METHOD</span>
+      <p>Generated candidates follow category-specific game contracts before compilation. Every output is snapped, composed to an exact target, measured against its profile, and routed with stable reason codes. Engine import remains a separate acceptance gate.</p>
+      <code>SOURCE → GRID → BODY → MASK → OUTLINE → FINAL → PREVIEW</code>
+    </section>
+  </main>
+
+  <footer>
+    <span>PIXEL PIPELINE / STATIC STAGE SCOPE</span>
+    <span>No external runtime · no hidden service dependency</span>
+  </footer>
+
+  <script src="demo-data.js"></script>
+  <script src="demo.js"></script>
+</body>
+</html>
