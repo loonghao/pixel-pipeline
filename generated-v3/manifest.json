@@ -1,0 +1,58 @@
+{
+    "schema_version":  1,
+    "dataset_id":  "generated-v3-game-food-and-identity",
+    "rights":  "evaluation-only",
+    "source_policy":  "Codex-generated sources; local-only until artist approval",
+    "asset_count":  7,
+    "variant_count":  21,
+    "report":  "training/generated-v3/resolution-lab/reports.json",
+    "resolutions":  [
+                        32,
+                        48,
+                        64
+                    ],
+    "assets":  [
+                   {
+                       "id":  "character-scarf-wrench-v1",
+                       "category":  "character",
+                       "source":  "training/generated-v3/raw/character/character-scarf-wrench-v1.png",
+                       "focus":  "face · goggles · wrench silhouette · red scarf tail"
+                   },
+                   {
+                       "id":  "character-snail-satchel-v1",
+                       "category":  "character",
+                       "source":  "training/generated-v3/raw/character/character-snail-satchel-v1.png",
+                       "focus":  "eye stalks · spiral shell · smile · blue satchel"
+                   },
+                   {
+                       "id":  "character-food-monster-v1",
+                       "category":  "character",
+                       "source":  "training/generated-v3/raw/character/character-food-monster-v1.png",
+                       "focus":  "eyes · fangs · chef hat · chili badge · arms"
+                   },
+                   {
+                       "id":  "prop-carnivorous-cyan-bud-v1",
+                       "category":  "prop",
+                       "source":  "training/generated-v3/raw/prop/prop-carnivorous-cyan-bud-v1.png",
+                       "focus":  "curling leaf mouths · thorns · cyan bud · pot rim"
+                   },
+                   {
+                       "id":  "prop-baozi-scallion-v1",
+                       "category":  "prop",
+                       "source":  "training/generated-v3/raw/prop/prop-baozi-scallion-v1.png",
+                       "focus":  "six pleats · scallion garnish · red stamp · dough contour"
+                   },
+                   {
+                       "id":  "prop-ramen-bowl-v1",
+                       "category":  "prop",
+                       "source":  "training/generated-v3/raw/prop/prop-ramen-bowl-v1.png",
+                       "focus":  "noodle strands · egg · fish cake · scallions · rim"
+                   },
+                   {
+                       "id":  "prop-pizza-garden-v1",
+                       "category":  "prop",
+                       "source":  "training/generated-v3/raw/prop/prop-pizza-garden-v1.png",
+                       "focus":  "crust silhouette · pepperoni · peppers · mushrooms · basil"
+                   }
+               ]
+}
