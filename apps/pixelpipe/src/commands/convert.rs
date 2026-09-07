@@ -241,7 +241,7 @@ pub fn run_sheet_conversion(params: &ConvertParams, spec: SheetSpec) -> Result<V
         .with_context(|| format!("reading {}", params.input.display()))?;
     let sheet_sha = pixel_cache::sha256_hex(&sheet_bytes);
     let sheet = Bitmap::load(&params.input, params.max_pixels)?;
-    let cells = slice(&sheet, spec);
+    let cells = slice(&sheet, spec)?;
     if cells.is_empty() {
         return Err(anyhow!(
             "no non-empty cells found slicing {}",
