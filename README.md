@@ -75,6 +75,15 @@ pixelpipe batch tasks.jsonl --out-dir out --jobs 8 --resume
 `*.body-mask.png`, `*.outline-mask.png`, `*.preview.png`) and a
 `*.report.json`.
 
+Sheet conversion emits JSONL reports in row-major order and skips fully
+transparent cells; filenames retain the original row/column indices. `--grid`
+partitions the complete image: boundary `i` is `floor(i * extent / count)`, so
+non-divisible dimensions produce cells differing by at most one pixel without
+discarding the right/bottom edge. `--cell` clips partial edge cells. Zero-sized
+cells and grids larger than the image dimensions are errors (exit 1), before
+any output is written. Use evenly divisible, untrimmed sheets for animation
+frames that require identical source dimensions.
+
 ### Batch manifest (JSONL)
 
 One task per line:
@@ -111,6 +120,9 @@ unaffected. See [`profiles/`](profiles/) for the full schema.
   *Edit → Preferences → Extensions*.
 
 ## Status model & exit codes
+
+See [the asset automation audit](docs/asset-automation-audit.md) for the current
+Aseprite/LibreSprite interface boundaries and remaining production gaps.
 
 | Status   | Exit | Meaning                                                  |
 | -------- | ---- | -------------------------------------------------------- |

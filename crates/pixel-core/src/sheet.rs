@@ -7,6 +7,7 @@
 //! functions are deterministic (row-major, top-left first).
 
 use crate::bitmap::Bitmap;
+use crate::error::CoreError;
 
 /// How to divide a sheet into cells.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,16 +32,32 @@ fn is_transparent(px: [u8; 4]) -> bool {
     px[3] == 0
 }
 
-/// Slice a sheet into equal cells according to `spec`. Cells are returned in
-/// row-major order. Empty (fully transparent) cells are skipped so an agent
-/// only gets real sprites.
-pub fn slice(sheet: &Bitmap, spec: SheetSpec) -> Vec<Cell> {
+/// Slice a sheet in row-major order, skipping fully transparent cells.
+/// Grid boundaries partition the entire image, including remainder pixels;
+/// fixed-size cells at the right/bottom edge are clipped to the image bounds.
+/// Zero dimensions and grids with subpixel cells are rejected before iteration.
+pub fn slice(sheet: &Bitmap, spec: SheetSpec) -> Result<Vec<Cell>, CoreError> {
+    if sheet.width == 0 || sheet.height == 0 {
+        return Err(CoreError::Invalid(
+            "sheet dimensions must be positive".into(),
+        ));
+    }
     let (rows, cols) = match spec {
-        SheetSpec::Grid { rows, cols } => (rows.max(1), cols.max(1)),
+        SheetSpec::Grid { rows, cols } => {
+            if rows == 0 || cols == 0 || rows > sheet.height || cols > sheet.width {
+                return Err(CoreError::Invalid(
+                    "grid dimensions must be positive and cannot exceed sheet dimensions".into(),
+                ));
+            }
+            (rows, cols)
+        }
         SheetSpec::Cell { w, h } => {
-            let cols = if w == 0 { 1 } else { sheet.width.div_ceil(w) };
-            let rows = if h == 0 { 1 } else { sheet.height.div_ceil(h) };
-            (rows.max(1), cols.max(1))
+            if w == 0 || h == 0 {
+                return Err(CoreError::Invalid(
+                    "cell dimensions must be positive".into(),
+                ));
+            }
+            (sheet.height.div_ceil(h), sheet.width.div_ceil(w))
         }
     };
     let mut cells = Vec::new();
@@ -48,22 +65,29 @@ pub fn slice(sheet: &Bitmap, spec: SheetSpec) -> Vec<Cell> {
         for col in 0..cols {
             let (x0, y0, cw, ch) = match spec {
                 SheetSpec::Grid { .. } => {
-                    let cw = sheet.width / cols;
-                    let ch = sheet.height / rows;
-                    (col * cw, row * ch, cw, ch)
+                    // Widen before multiplication: CLI dimensions are u32.
+                    let boundary = |index: u32, length: u32, count: u32| {
+                        (u64::from(index) * u64::from(length) / u64::from(count)) as u32
+                    };
+                    let x0 = boundary(col, sheet.width, cols);
+                    let y0 = boundary(row, sheet.height, rows);
+                    let x1 = boundary(col + 1, sheet.width, cols);
+                    let y1 = boundary(row + 1, sheet.height, rows);
+                    (x0, y0, x1 - x0, y1 - y0)
                 }
-                SheetSpec::Cell { w, h } => (col * w, row * h, w, h),
+                SheetSpec::Cell { w, h } => {
+                    let x0 = col * w;
+                    let y0 = row * h;
+                    (x0, y0, w.min(sheet.width - x0), h.min(sheet.height - y0))
+                }
             };
-            if cw == 0 || ch == 0 {
-                continue;
-            }
             let bitmap = sheet.crop(x0, y0, cw, ch);
             if !is_cell_empty(&bitmap) {
                 cells.push(Cell { row, col, bitmap });
             }
         }
     }
-    cells
+    Ok(cells)
 }
 
 fn is_cell_empty(bmp: &Bitmap) -> bool {
@@ -156,6 +180,56 @@ fn line_occupied(sheet: &Bitmap, axis: Axis, line: u32) -> bool {
 mod tests {
     use super::*;
 
+    #[test]
+    fn uneven_grid_preserves_every_source_pixel_in_order() {
+        let mut sheet = Bitmap::new(7, 5);
+        for y in 0..5 {
+            for x in 0..7 {
+                sheet.set(x, y, [x as u8, y as u8, 20, 255]);
+            }
+        }
+        let cells = slice(&sheet, SheetSpec::Grid { rows: 2, cols: 3 }).unwrap();
+        let mut seen = std::collections::BTreeSet::new();
+        for (index, cell) in cells.iter().enumerate() {
+            assert_eq!((cell.row, cell.col), (index as u32 / 3, index as u32 % 3));
+            for pixel in cell.bitmap.data.chunks_exact(4) {
+                assert!(seen.insert((pixel[0], pixel[1])), "overlapping cells");
+            }
+        }
+        assert_eq!(seen.len(), 35);
+        assert!(seen.contains(&(6, 4)));
+    }
+
+    #[test]
+    fn invalid_grids_are_rejected_and_oversized_cells_are_clipped() {
+        let mut sheet = Bitmap::new(7, 5);
+        sheet.set(6, 4, [20, 40, 60, 255]);
+        for spec in [
+            SheetSpec::Grid { rows: 0, cols: 1 },
+            SheetSpec::Grid {
+                rows: 1,
+                cols: u32::MAX,
+            },
+            SheetSpec::Cell { w: 0, h: 1 },
+        ] {
+            assert!(slice(&sheet, spec).is_err());
+        }
+        let cells = slice(
+            &sheet,
+            SheetSpec::Cell {
+                w: u32::MAX,
+                h: u32::MAX,
+            },
+        )
+        .unwrap();
+        assert_eq!(cells.len(), 1);
+        assert_eq!(cells[0].bitmap.data, sheet.data);
+        let cells = slice(&sheet, SheetSpec::Cell { w: 4, h: 3 }).unwrap();
+        assert_eq!((cells[0].row, cells[0].col), (1, 1));
+        assert_eq!((cells[0].bitmap.width, cells[0].bitmap.height), (3, 2));
+        assert_eq!(cells[0].bitmap.get(2, 1), [20, 40, 60, 255]);
+    }
+
     /// Build a sheet with 2 rows × 3 cols of solid squares separated by
     /// transparent gutters.
     fn grid_sheet() -> Bitmap {
@@ -185,7 +259,7 @@ mod tests {
     #[test]
     fn slice_grid_skips_empty_cells() {
         let sheet = grid_sheet();
-        let cells = slice(&sheet, SheetSpec::Grid { rows: 2, cols: 3 });
+        let cells = slice(&sheet, SheetSpec::Grid { rows: 2, cols: 3 }).unwrap();
         assert_eq!(cells.len(), 6);
         assert!(cells.iter().all(|c| c.bitmap.width > 0));
     }
@@ -204,7 +278,7 @@ mod tests {
     #[test]
     fn slice_by_cell_size() {
         let sheet = grid_sheet();
-        let cells = slice(&sheet, SheetSpec::Cell { w: 19, h: 12 });
+        let cells = slice(&sheet, SheetSpec::Cell { w: 19, h: 12 }).unwrap();
         assert!(!cells.is_empty());
     }
 }
